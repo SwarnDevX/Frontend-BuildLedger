@@ -11,7 +11,7 @@ const ALL_NAV = [
   { icon: Package,          label: 'My Portal',    path: '/vendor/dashboard', roles: ['VENDOR'] },
   { icon: Users,            label: 'Vendors',      path: '/vendors',          roles: ['ADMIN','PROJECT_MANAGER','COMPLIANCE_OFFICER'] },
   { icon: FileText,         label: 'Contracts',    path: '/contracts',        roles: ['ADMIN','PROJECT_MANAGER'] },
-  { icon: Truck,            label: 'Deliveries',   path: '/deliveries',       roles: ['ADMIN','PROJECT_MANAGER'] },
+  { icon: Truck,            label: 'Deliveries',   path: '/deliveries',       roles: ['ADMIN','PROJECT_MANAGER','VENDOR'] },
   { icon: CreditCard,       label: 'Invoices',     path: '/invoices',         roles: ['ADMIN','FINANCE_OFFICER'] },
   { icon: ShieldCheck,      label: 'Compliance',   path: '/compliance',       roles: ['ADMIN','COMPLIANCE_OFFICER','PROJECT_MANAGER'] },
   { icon: Settings,         label: 'Admin',        path: '/admin',            roles: ['ADMIN'] },

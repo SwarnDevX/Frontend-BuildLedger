@@ -14,6 +14,11 @@ export default function Badge({ status }) {
     'Paid': 'bg-green-100 text-green-700 border-green-200',
     'In Transit': 'bg-blue-100 text-blue-700 border-blue-200',
     'Scheduled': 'bg-indigo-100 text-indigo-700 border-indigo-200',
+    PENDING: 'bg-amber-100 text-amber-700 border-amber-200',
+    MARKED_DELIVERED: 'bg-blue-100 text-blue-700 border-blue-200',
+    DELAYED: 'bg-orange-100 text-orange-700 border-orange-200',
+    ACCEPTED: 'bg-green-100 text-green-700 border-green-200',
+    REJECTED: 'bg-red-100 text-red-700 border-red-200',
     'Compliant': 'bg-green-100 text-green-700 border-green-200',
     'Pending Review': 'bg-amber-100 text-amber-700 border-amber-200',
     'Flag': 'bg-red-100 text-red-700 border-red-200',
@@ -30,7 +35,7 @@ export default function Badge({ status }) {
       'inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-semibold border',
       map[status] || 'bg-slate-100 text-slate-600 border-slate-200'
     )}>
-      {status}
+      {typeof status === 'string' ? status.replace(/_/g, ' ') : status}
     </span>
   );
 }

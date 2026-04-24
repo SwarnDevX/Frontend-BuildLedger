@@ -1,164 +1,100 @@
-# BuildLedger — Mock Data & Missing Backend Endpoints
+# 📋 Missing API Endpoints – Future Backend Requirements
 
-## Overview
-The following features use **local mock data** because the corresponding backend endpoints have not been implemented yet.
-These endpoints must be built in a future backend sprint.
+This document lists all endpoints that are **not yet available** in the backend but are needed for full frontend functionality. Until these are implemented, the frontend either derives approximate data from existing endpoints or omits those features.
 
 ---
 
-## 📋 Missing Endpoints (Priority Order)
+## 1. Analytics / Dashboard
 
-### 1. Contracts API
-**Used in:** Contract Management page (`/contracts`)
-
-| Method | Endpoint | Description |
-|--------|----------|-------------|
-| `GET` | `/contracts` | Get all contracts [PM/ADMIN] |
-| `GET` | `/contracts/{contractId}` | Get contract by ID |
-| `POST` | `/contracts` | Create new contract [PM/ADMIN] |
-| `PUT` | `/contracts/{contractId}` | Update contract [PM/ADMIN] |
-| `DELETE` | `/contracts/{contractId}` | Delete contract [ADMIN] |
-| `GET` | `/contracts/vendor/{vendorId}` | Get contracts by vendor |
-| `GET` | `/contracts/status/{status}` | Filter contracts by status |
-
-**Mock file:** `src/data/mockData.js` → `contracts`, `recentContracts`
-
-**Expected Response Shape:**
+### `GET /analytics/contracts/trend`
+**Used in:** Dashboard – "Contract Value Over Time" area chart  
+**Purpose:** Returns monthly aggregated contract values for the current year  
+**Response shape:**
 ```json
-{
-  "success": true,
-  "data": [
-    {
-      "contractId": 1,
-      "project": "Metro Tower Phase 2",
-      "vendorId": 1,
-      "vendorName": "SteelCorp Ltd",
-      "value": 480000,
-      "startDate": "2025-01-15",
-      "endDate": "2025-08-30",
-      "status": "ACTIVE",
-      "progress": 62,
-      "contractType": "FIXED_PRICE",
-      "complianceStatus": "COMPLIANT"
-    }
-  ]
-}
+[{ "month": "Jan", "value": 820000, "count": 18 }, ...]
+```
+**Current workaround:** Contracts are grouped by `createdAt` month using client-side logic.
+
+---
+
+### `GET /analytics/vendors/performance`
+**Used in:** Dashboard – "Vendor Performance" bar chart  
+**Purpose:** Returns a performance score (0–100) per vendor  
+**Response shape:**
+```json
+[{ "vendorId": 1, "vendorName": "SteelCorp", "score": 92, "deliveries": 45 }, ...]
+```
+**Current workaround:** Vendors listed with static score derived from `status` field.
+
+---
+
+## 2. Analytics / Finance
+
+### `GET /analytics/payments/trend`
+**Used in:** Invoice & Payments page – "Payment History" bar chart  
+**Purpose:** Returns monthly paid vs pending payment totals  
+**Response shape:**
+```json
+[{ "month": "Jan", "paid": 420000, "pending": 85000 }, ...]
+```
+**Current workaround:** Payments from `GET /payments` grouped by `createdAt` month on client side.
+
+---
+
+## 3. Compliance / Vendor Scores
+
+### `GET /compliance/vendor-scores`
+**Used in:** Compliance & Audit page – vendor score breakdown  
+**Response shape:**
+```json
+[{ "vendorId": 1, "vendorName": "SteelCorp", "score": 98, "risk": "LOW" }, ...]
+```
+**Current workaround:** Overall score calculated from ratio of COMPLIANT vs total compliance records.
+
+---
+
+## 4. Notifications
+
+### `GET /notifications`
+**Purpose:** Paginated list of system notifications for the current user  
+**Response shape:**
+```json
+{ "data": [{ "notificationId": 1, "type": "Invoice", "message": "...", "severity": "error", "read": false, "createdAt": "..." }] }
 ```
 
----
+### `PATCH /notifications/{id}/read`  
+**Purpose:** Mark a single notification as read
 
-### 2. Delivery / Shipment Tracking API
-**Used in:** Delivery Tracking page (`/deliveries`)
+### `PATCH /notifications/read-all`  
+**Purpose:** Mark all notifications as read
 
-| Method | Endpoint | Description |
-|--------|----------|-------------|
-| `GET` | `/deliveries` | Get all deliveries [PM/ADMIN] |
-| `GET` | `/deliveries/{deliveryId}` | Get delivery by ID |
-| `POST` | `/deliveries` | Create delivery record [PM/ADMIN] |
-| `PUT` | `/deliveries/{deliveryId}/status` | Update delivery status |
-| `GET` | `/deliveries/contract/{contractId}` | Deliveries by contract |
-| `GET` | `/deliveries/status/{status}` | Filter by status (PENDING/IN_TRANSIT/COMPLETED) |
+### `GET /notifications/unread-count`  
+**Purpose:** Returns unread badge count → `{ "count": 5 }`
 
-**Mock file:** `src/data/mockData.js` → `deliveries`
+**Current workaround:** Notifications are derived client-side from invoices, deliveries, compliance, and contracts. "Mark as read" is local state only (resets on refresh).
 
 ---
 
-### 3. Invoice & Payment API
-**Used in:** Invoice & Payment page (`/invoices`)
+## 5. Contract Progress Field
 
-| Method | Endpoint | Description |
-|--------|----------|-------------|
-| `GET` | `/invoices` | Get all invoices [FINANCE/ADMIN] |
-| `GET` | `/invoices/{invoiceId}` | Get invoice by ID |
-| `POST` | `/invoices` | Create invoice [FINANCE/ADMIN] |
-| `PUT` | `/invoices/{invoiceId}/approve` | Approve invoice [FINANCE/ADMIN] |
-| `PUT` | `/invoices/{invoiceId}/pay` | Mark invoice as paid [FINANCE/ADMIN] |
-| `GET` | `/invoices/vendor/{vendorId}` | Invoices by vendor |
-| `GET` | `/invoices/status/{status}` | Filter by status |
-
-**Mock file:** `src/data/mockData.js` → `invoices`, `paymentTrendData`
+`progress` (0–100) is not returned by `GET /contracts`.  
+**Current workaround:** Derived from `status` (DRAFT=5%, ACTIVE=55%, COMPLETED=100%, etc.)
 
 ---
 
-### 4. Audit Log & Compliance API
-**Used in:** Compliance & Audit page (`/compliance`)
+## 6. Contract Compliance Flag
 
-| Method | Endpoint | Description |
-|--------|----------|-------------|
-| `GET` | `/audit/logs` | Get all audit logs [ADMIN/COMPLIANCE] |
-| `GET` | `/audit/logs/module/{module}` | Filter by module |
-| `GET` | `/compliance/scores` | Get compliance scores per vendor |
-| `POST` | `/compliance/check/{vendorId}` | Run compliance check |
-| `GET` | `/compliance/alerts` | Get active compliance alerts |
-
-**Mock file:** `src/data/mockData.js` → `auditLogs`, `complianceScores`
+`complianceFlag` is not returned by `GET /contracts`.  
+**Future endpoint:** `GET /contracts/{id}/compliance-summary`  
+**Current workaround:** Not displayed on contract cards.
 
 ---
 
-### 5. Dashboard KPI / Analytics API
-**Used in:** Main Dashboard (`/`)
+## 7. Delivery Progress Field
 
-| Method | Endpoint | Description |
-|--------|----------|-------------|
-| `GET` | `/analytics/kpi` | Get dashboard KPI summary |
-| `GET` | `/analytics/contract-trend` | Monthly contract value series |
-| `GET` | `/analytics/vendor-performance` | Vendor performance scores |
-
-**Mock file:** `src/data/mockData.js` → `kpiData`, `contractTrendData`, `vendorPerformanceData`
+`progress` (0–100) is not returned by `GET /deliveries`.  
+**Current workaround:** Derived from `status` (SCHEDULED=0%, PENDING=15%, IN_TRANSIT=65%, COMPLETED=100%).
 
 ---
 
-### 6. Auth — Logout / Token Refresh
-**Currently handled:** Client-side only (clear localStorage)
-
-| Method | Endpoint | Description |
-|--------|----------|-------------|
-| `POST` | `/auth/logout` | Invalidate JWT server-side |
-| `POST` | `/auth/refresh` | Issue new token from refresh token |
-| `POST` | `/auth/change-password` | Change password for logged-in user |
-
----
-
-### 7. Notifications API
-**Used in:** Notifications page (`/notifications`)  
-Currently uses fully static mock data.
-
-| Method | Endpoint | Description |
-|--------|----------|-------------|
-| `GET` | `/notifications` | Get notifications for current user |
-| `PUT` | `/notifications/{id}/read` | Mark notification as read |
-| `PUT` | `/notifications/read-all` | Mark all as read |
-| `DELETE` | `/notifications/{id}` | Delete notification |
-| WebSocket | `ws://…/notifications` | Real-time push notifications |
-
-**Mock file:** `src/data/mockData.js` → `notifications`
-
----
-
-## 🔄 Integration Instructions (when endpoints are ready)
-
-1. Import the relevant API module from `src/api/`
-2. Replace the `mockData` import in the page component with `useState` + `useEffect`
-3. Call the API in `useEffect` on mount
-4. Map response `data` fields to the component's existing shape
-
-### Example (Dashboard KPI):
-```js
-// Before (mock):
-import { kpiData } from '../../data/mockData';
-
-// After (real API):
-import { getKpiSummary } from '../../api/analytics';
-const [kpiData, setKpiData] = useState([]);
-useEffect(() => {
-  getKpiSummary().then(r => setKpiData(r.data?.data || []));
-}, []);
-```
-
----
-
-## 📝 Notes
-- All authenticated requests automatically include `Authorization: Bearer <token>` via the Axios interceptor in `src/api/axios.js`
-- The backend base URL is configured in `src/api/axios.js` as `http://localhost:8079`
-- 401 responses auto-redirect to `/login` and clear stored credentials
-
+*Last updated: April 22, 2026*

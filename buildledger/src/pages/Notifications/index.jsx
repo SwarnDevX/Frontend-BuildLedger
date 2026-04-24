@@ -1,17 +1,107 @@
-import { useState } from 'react';
-import { Bell, FileText, Truck, CreditCard, ShieldCheck, Check, CheckCheck } from 'lucide-react';
-import { notifications } from '../../data/mockData';
+import { useState, useEffect } from 'react';
+import { Bell, FileText, Truck, CreditCard, ShieldCheck, Check, CheckCheck, Loader2, RefreshCw } from 'lucide-react';
+import { getAllInvoices } from '../../api/invoices';
+import { getAllDeliveries } from '../../api/deliveries';
+import { getAllCompliance } from '../../api/compliance';
+import { getAllContracts } from '../../api/contracts';
 
-const typeIcons = { Contract: FileText, Delivery: Truck, Invoice: CreditCard, Compliance: ShieldCheck };
+// NOTE: There is no dedicated Notifications API in the backend.
+//   Future endpoint needed:
+//   GET /notifications                    → paginated list of notifications
+//   PATCH /notifications/{id}/read        → mark notification as read
+//   GET  /notifications/unread-count      → { count: number }
+//   Until those endpoints exist, notifications are derived from:
+//     - Overdue invoices    (GET /invoices)
+//     - Pending deliveries  (GET /deliveries)
+//     - Pending compliance  (GET /compliance)
+//     - Active contracts    (GET /contracts)
+
+const typeIcons  = { Contract: FileText, Delivery: Truck, Invoice: CreditCard, Compliance: ShieldCheck };
 const typeColors = { Contract: '#2563EB', Delivery: '#14B8A6', Invoice: '#F59E0B', Compliance: '#EF4444' };
-const typeBg = { Contract: 'rgba(37,99,235,0.08)', Delivery: 'rgba(20,184,166,0.08)', Invoice: 'rgba(245,158,11,0.08)', Compliance: 'rgba(239,68,68,0.08)' };
+const typeBg     = { Contract: 'rgba(37,99,235,0.08)', Delivery: 'rgba(20,184,166,0.08)', Invoice: 'rgba(245,158,11,0.08)', Compliance: 'rgba(239,68,68,0.08)' };
 const severityBorder = { error: 'border-l-red-400', warning: 'border-l-amber-400', info: 'border-l-blue-400', success: 'border-l-green-400' };
 
 const filters = ['All', 'Unread', 'Contract', 'Delivery', 'Invoice', 'Compliance'];
 
+function deriveNotifications(invoices, deliveries, compliance, contracts) {
+  const items = [];
+  const now = new Date();
+  let id = 1;
+
+  // Overdue invoices
+  invoices.forEach(inv => {
+    const due = inv.dueDate ? new Date(inv.dueDate) : null;
+    if (inv.status === 'PENDING' && due && due < now) {
+      items.push({ id: id++, type: 'Invoice', severity: 'error', read: false,
+        message: `Invoice #${inv.invoiceId} is overdue (due ${inv.dueDate})`,
+        time: inv.dueDate });
+    } else if (inv.status === 'APPROVED') {
+      items.push({ id: id++, type: 'Invoice', severity: 'success', read: true,
+        message: `Invoice #${inv.invoiceId} has been approved ($${(inv.amount || 0).toLocaleString()})`,
+        time: inv.updatedAt?.slice(0, 10) || '—' });
+    }
+  });
+
+  // Pending deliveries
+  deliveries.forEach(del => {
+    if (del.status === 'PENDING') {
+      items.push({ id: id++, type: 'Delivery', severity: 'warning', read: false,
+        message: `Delivery #${del.deliveryId} – ${del.item || 'item'} is pending`,
+        time: del.scheduledDate || del.expectedDate || '—' });
+    } else if (del.status === 'IN_TRANSIT') {
+      items.push({ id: id++, type: 'Delivery', severity: 'info', read: true,
+        message: `Delivery #${del.deliveryId} is in transit`,
+        time: del.scheduledDate || '—' });
+    } else if (del.status === 'COMPLETED') {
+      items.push({ id: id++, type: 'Delivery', severity: 'success', read: true,
+        message: `Delivery #${del.deliveryId} completed successfully`,
+        time: del.scheduledDate || '—' });
+    }
+  });
+
+  // Pending compliance
+  compliance.forEach(c => {
+    if (c.status === 'PENDING') {
+      items.push({ id: id++, type: 'Compliance', severity: 'warning', read: false,
+        message: `Compliance record #${c.complianceId} is pending review`,
+        time: c.createdAt?.slice(0, 10) || '—' });
+    } else if (c.status === 'NON_COMPLIANT' || c.status === 'REJECTED') {
+      items.push({ id: id++, type: 'Compliance', severity: 'error', read: false,
+        message: `Compliance #${c.complianceId} flagged as non-compliant`,
+        time: c.updatedAt?.slice(0, 10) || '—' });
+    }
+  });
+
+  // Active contracts
+  contracts.filter(c => c.status === 'ACTIVE').slice(0, 3).forEach(c => {
+    items.push({ id: id++, type: 'Contract', severity: 'info', read: true,
+      message: `Contract #${c.contractId} – ${c.title || 'contract'} is active`,
+      time: c.startDate || '—' });
+  });
+
+  return items;
+}
+
 export default function Notifications() {
   const [filter, setFilter] = useState('All');
-  const [items, setItems] = useState(notifications);
+  const [items, setItems]   = useState([]);
+  const [loading, setLoading] = useState(true);
+
+  const fetchAll = async () => {
+    setLoading(true);
+    try {
+      const [inv, del, comp, con] = await Promise.allSettled([
+        getAllInvoices(), getAllDeliveries(), getAllCompliance(), getAllContracts(),
+      ]);
+      const invoices    = inv.status  === 'fulfilled' ? (inv.value.data?.data  || []) : [];
+      const deliveries  = del.status  === 'fulfilled' ? (del.value.data?.data  || []) : [];
+      const compliance  = comp.status === 'fulfilled' ? (comp.value.data?.data || []) : [];
+      const contracts   = con.status  === 'fulfilled' ? (con.value.data?.data  || []) : [];
+      setItems(deriveNotifications(invoices, deliveries, compliance, contracts));
+    } finally { setLoading(false); }
+  };
+
+  useEffect(() => { fetchAll(); }, []);
 
   const filtered = items.filter(n => {
     if (filter === 'All') return true;
@@ -20,7 +110,7 @@ export default function Notifications() {
   });
 
   const markAllRead = () => setItems(prev => prev.map(n => ({ ...n, read: true })));
-  const markRead = (id) => setItems(prev => prev.map(n => n.id === id ? { ...n, read: true } : n));
+  const markRead    = (id) => setItems(prev => prev.map(n => n.id === id ? { ...n, read: true } : n));
 
   const unreadCount = items.filter(n => !n.read).length;
 
@@ -37,11 +127,14 @@ export default function Notifications() {
             <p className="text-sm text-slate-400">{unreadCount} unread alerts</p>
           </div>
         </div>
-        {unreadCount > 0 && (
-          <button onClick={markAllRead} className="btn-secondary text-xs">
-            <CheckCheck size={13} /> Mark all read
-          </button>
-        )}
+        <div className="flex gap-2">
+          <button onClick={fetchAll} className="btn-secondary text-xs"><RefreshCw size={13} /> Refresh</button>
+          {unreadCount > 0 && (
+            <button onClick={markAllRead} className="btn-secondary text-xs">
+              <CheckCheck size={13} /> Mark all read
+            </button>
+          )}
+        </div>
       </div>
 
       {/* Filter bar */}
@@ -72,11 +165,9 @@ export default function Notifications() {
               </div>
               <div>
                 <p className="text-xs font-semibold text-slate-700">{type}</p>
-                {count > 0 ? (
-                  <p className="text-[10px] text-red-500 font-semibold">{count} unread</p>
-                ) : (
-                  <p className="text-[10px] text-slate-400">All clear</p>
-                )}
+                {count > 0
+                  ? <p className="text-[10px] text-red-500 font-semibold">{count} unread</p>
+                  : <p className="text-[10px] text-slate-400">All clear</p>}
               </div>
             </div>
           );
@@ -84,44 +175,49 @@ export default function Notifications() {
       </div>
 
       {/* Notification list */}
-      <div className="space-y-2">
-        {filtered.length === 0 && (
-          <div className="glass-card p-10 text-center">
-            <CheckCheck size={28} className="mx-auto text-green-500 mb-2" />
-            <p className="text-sm font-semibold text-slate-700">All caught up!</p>
-            <p className="text-xs text-slate-400">No notifications to show.</p>
-          </div>
-        )}
-        {filtered.map(n => {
-          const Icon = typeIcons[n.type] || Bell;
-          return (
-            <div key={n.id}
-              className={`glass-card p-4 flex items-start gap-3 border-l-4 transition-all ${severityBorder[n.severity]} ${!n.read ? 'bg-white/80' : 'opacity-70'}`}>
-              <div className="w-9 h-9 rounded-xl flex items-center justify-center shrink-0 mt-0.5" style={{ background: typeBg[n.type] }}>
-                <Icon size={15} style={{ color: typeColors[n.type] }} />
-              </div>
-              <div className="flex-1 min-w-0">
-                <div className="flex items-start justify-between gap-2">
-                  <p className={`text-xs leading-snug ${!n.read ? 'text-slate-800 font-semibold' : 'text-slate-600'}`}>{n.message}</p>
-                  {!n.read && (
-                    <button onClick={() => markRead(n.id)}
-                      className="shrink-0 w-6 h-6 rounded-lg flex items-center justify-center text-slate-400 hover:bg-slate-100 hover:text-blue-600 transition-all">
-                      <Check size={12} />
-                    </button>
-                  )}
-                </div>
-                <div className="flex items-center gap-2 mt-1">
-                  <span className="text-[10px] text-slate-400">{n.time}</span>
-                  <span className="w-1 h-1 rounded-full bg-slate-200" />
-                  <span className="text-[10px] font-medium" style={{ color: typeColors[n.type] }}>{n.type}</span>
-                  {!n.read && <span className="w-1.5 h-1.5 rounded-full bg-blue-500 animate-pulse" />}
-                </div>
-              </div>
+      {loading ? (
+        <div className="flex items-center justify-center py-12 gap-2 text-slate-400">
+          <Loader2 size={18} className="animate-spin text-blue-500" /><span className="text-sm">Loading notifications…</span>
+        </div>
+      ) : (
+        <div className="space-y-2">
+          {filtered.length === 0 && (
+            <div className="glass-card p-10 text-center">
+              <CheckCheck size={28} className="mx-auto text-green-500 mb-2" />
+              <p className="text-sm font-semibold text-slate-700">All caught up!</p>
+              <p className="text-xs text-slate-400">No notifications to show.</p>
             </div>
-          );
-        })}
-      </div>
+          )}
+          {filtered.map(n => {
+            const Icon = typeIcons[n.type] || Bell;
+            return (
+              <div key={n.id}
+                className={`glass-card p-4 flex items-start gap-3 border-l-4 transition-all ${severityBorder[n.severity]} ${!n.read ? 'bg-white/80' : 'opacity-70'}`}>
+                <div className="w-9 h-9 rounded-xl flex items-center justify-center shrink-0 mt-0.5" style={{ background: typeBg[n.type] }}>
+                  <Icon size={15} style={{ color: typeColors[n.type] }} />
+                </div>
+                <div className="flex-1 min-w-0">
+                  <div className="flex items-start justify-between gap-2">
+                    <p className={`text-xs leading-snug ${!n.read ? 'text-slate-800 font-semibold' : 'text-slate-600'}`}>{n.message}</p>
+                    {!n.read && (
+                      <button onClick={() => markRead(n.id)}
+                        className="shrink-0 w-6 h-6 rounded-lg flex items-center justify-center text-slate-400 hover:bg-slate-100 hover:text-blue-600 transition-all">
+                        <Check size={12} />
+                      </button>
+                    )}
+                  </div>
+                  <div className="flex items-center gap-2 mt-1">
+                    <span className="text-[10px] text-slate-400">{n.time}</span>
+                    <span className="w-1 h-1 rounded-full bg-slate-200" />
+                    <span className="text-[10px] font-medium" style={{ color: typeColors[n.type] }}>{n.type}</span>
+                    {!n.read && <span className="w-1.5 h-1.5 rounded-full bg-blue-500 animate-pulse" />}
+                  </div>
+                </div>
+              </div>
+            );
+          })}
+        </div>
+      )}
     </div>
   );
 }
-

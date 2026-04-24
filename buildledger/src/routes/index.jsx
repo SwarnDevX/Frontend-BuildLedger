@@ -69,7 +69,7 @@ export const router = createBrowserRouter([
       {
         path: 'deliveries',
         element: (
-          <ProtectedRoute roles={['ADMIN', 'PROJECT_MANAGER']}>
+          <ProtectedRoute roles={['ADMIN', 'PROJECT_MANAGER', 'VENDOR']}>
             <DeliveryTracking />
           </ProtectedRoute>
         ),

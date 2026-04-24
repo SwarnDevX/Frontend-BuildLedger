@@ -5,6 +5,20 @@ import { getAllVendors, getVendorDocuments, uploadVendorDocument } from '../../a
 import Badge from '../../components/ui/Badge';
 import toast from 'react-hot-toast';
 
+const toArray = (value) => {
+  if (Array.isArray(value)) return value;
+  if (Array.isArray(value?.documents)) return value.documents;
+  if (Array.isArray(value?.items)) return value.items;
+  return [];
+};
+
+const normalizeDocument = (doc = {}) => ({
+  ...doc,
+  documentType: doc.documentType || doc.docType || 'OTHER',
+  status: doc.status || doc.verificationStatus || 'PENDING',
+  uploadedAt: doc.uploadedAt || doc.uploadedDate || doc.createdAt,
+});
+
 export default function VendorDashboard() {
   const { user } = useAuth();
   const [vendor, setVendor] = useState(null);
@@ -21,7 +35,7 @@ export default function VendorDashboard() {
           setVendor(mine);
           try {
             const docRes = await getVendorDocuments(mine.vendorId);
-            setDocs(docRes.data?.data || []);
+            setDocs(toArray(docRes.data?.data).map(normalizeDocument));
           } catch { setDocs([]); }
         }
       } catch { toast.error('Failed to load vendor profile'); }
@@ -34,14 +48,15 @@ export default function VendorDashboard() {
     if (!vendor) return;
     const file = e.target.files[0];
     if (!file) return;
-    const fd = new FormData();
-    fd.append('file', file);
-    fd.append('documentType', 'GENERAL');
+    if (file.type !== 'application/pdf') {
+      toast.error('Only PDF files are allowed');
+      return;
+    }
     try {
-      await uploadVendorDocument(vendor.vendorId, fd);
+      await uploadVendorDocument(vendor.vendorId, file, 'OTHER');
       toast.success('Document uploaded successfully!');
       const docRes = await getVendorDocuments(vendor.vendorId);
-      setDocs(docRes.data?.data || []);
+      setDocs(toArray(docRes.data?.data).map(normalizeDocument));
     } catch { toast.error('Upload failed'); }
   };
 
@@ -79,7 +94,7 @@ export default function VendorDashboard() {
           { label: 'Active Contracts', value: '—', icon: FileText, color: '#2563EB', bg: 'rgba(37,99,235,0.08)' },
           { label: 'Documents Uploaded', value: docs.length, icon: Upload, color: '#14B8A6', bg: 'rgba(20,184,166,0.08)' },
           { label: 'Pending Reviews', value: docs.filter(d => d.status === 'PENDING').length, icon: Clock, color: '#F59E0B', bg: 'rgba(245,158,11,0.08)' },
-          { label: 'Verified Docs', value: docs.filter(d => d.status === 'VERIFIED').length, icon: CheckCircle2, color: '#22C55E', bg: 'rgba(34,197,94,0.08)' },
+          { label: 'Verified Docs', value: docs.filter(d => d.status === 'APPROVED' || d.status === 'VERIFIED').length, icon: CheckCircle2, color: '#22C55E', bg: 'rgba(34,197,94,0.08)' },
         ].map(s => (
           <div key={s.label} className="glass-card p-4 flex items-center gap-3">
             <div className="w-10 h-10 rounded-xl flex items-center justify-center shrink-0" style={{ background: s.bg }}>
@@ -144,7 +159,7 @@ export default function VendorDashboard() {
                       <p className="text-[10px] text-slate-400">{d.uploadedAt?.slice(0, 10) || '—'}</p>
                     </div>
                   </div>
-                  <Badge status={d.status === 'VERIFIED' ? 'Completed' : d.status === 'REJECTED' ? 'Overdue' : 'Pending'} />
+                  <Badge status={d.status === 'APPROVED' || d.status === 'VERIFIED' ? 'Completed' : d.status === 'REJECTED' ? 'Overdue' : 'Pending'} />
                 </div>
               ))}
             </div>

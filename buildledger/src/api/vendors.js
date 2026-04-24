@@ -28,7 +28,14 @@ export const replaceVendorDocument = (vendorId, documentId, file, docType) => {
 };
 
 // Review: APPROVED or REJECTED  [PROJECT_MANAGER / ADMIN]
-export const verifyDocument       = (docId, data)    => api.put(`/vendors/documents/${docId}/review`, data);
+export const verifyDocument       = (docId, { status, reviewRemarks, username }) => {
+  const params = new URLSearchParams();
+  if (status) params.set('status', status);
+  if (reviewRemarks) params.set('reviewRemarks', reviewRemarks);
+  return api.put(`/vendors/documents/${docId}/review?${params.toString()}`, null, {
+    headers: { 'X-Username': username },
+  });
+};
 export const downloadDocument     = (docId)          => api.get(`/vendors/documents/${docId}/download`, { responseType: 'blob' });
 export const getPendingDocuments  = ()               => api.get('/vendors/documents/pending-review');
 export const getDocumentsByStatus = (status)         => api.get(`/vendors/documents/status/${status}`);
