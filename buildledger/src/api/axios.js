@@ -4,8 +4,15 @@ const API_BASE = import.meta.env.VITE_API_BASE ?? '/api';
 
 const api = axios.create({
   baseURL: API_BASE,
-  headers: { 'Content-Type': 'application/json' },
   timeout: 15000,
+});
+
+// Default JSON content-type for non-multipart requests
+api.interceptors.request.use((config) => {
+  if (!config.headers['Content-Type'] && !(config.data instanceof FormData)) {
+    config.headers['Content-Type'] = 'application/json';
+  }
+  return config;
 });
 
 // Attach JWT token to every request
