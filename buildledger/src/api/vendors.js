@@ -14,7 +14,7 @@ export const uploadVendorDocument = (vendorId, file, docType) => {
   formData.append('file', file);
   const type = docType || 'PAN_CARD';
   return api.post(`/vendors/${vendorId}/documents?docType=${encodeURIComponent(type)}`, formData, {
-    headers: { 'Content-Type': undefined }, // let browser set multipart/form-data with correct boundary
+    headers: { 'Content-Type': undefined },
   });
 };
 
@@ -37,6 +37,13 @@ export const verifyDocument       = (docId, { status, reviewRemarks, username })
   });
 };
 export const downloadDocument     = (docId)          => api.get(`/vendors/documents/${docId}/download`, { responseType: 'blob' });
+
+export const downloadVendorDocument = async ({ vendorId, documentId, docType, fileUri }) => {
+  const resolvedId = documentId || fileUri?.match(/(?:^|\/)(\d{1,})(?=[_\-.\/]|$)/)?.[1];
+  if (!resolvedId) throw new Error('Document id not available for download');
+  return downloadDocument(resolvedId);
+};
+
 export const getPendingDocuments  = ()               => api.get('/vendors/documents/pending-review');
 export const getDocumentsByStatus = (status)         => api.get(`/vendors/documents/status/${status}`);
 

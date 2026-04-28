@@ -10,6 +10,17 @@ import toast from 'react-hot-toast';
 
 const CATEGORIES = ['Materials', 'Electrical', 'Safety', 'Energy', 'Structural', 'Plumbing', 'Civil', 'Mechanical', 'IT & Technology', 'Other'];
 
+const DOC_TYPES = [
+  { label: 'PAN Card',                   value: 'PAN_CARD' },
+  { label: 'GST Certificate',            value: 'GST_CERTIFICATE' },
+  { label: 'Business License',           value: 'BUSINESS_LICENSE' },
+  { label: 'Incorporation Certificate',  value: 'INCORPORATION_CERTIFICATE' },
+  { label: 'Bank Statement',             value: 'BANK_STATEMENT' },
+  { label: 'Quality Certificate',        value: 'QUALITY_CERTIFICATE' },
+  { label: 'ISO Certificate',            value: 'ISO_CERTIFICATE' },
+  { label: 'Other',                      value: 'OTHER' },
+];
+
 const STEPS = [
   { id: 1, label: 'Business Info',  icon: Building2 },
   { id: 2, label: 'Contact',        icon: User },
@@ -150,8 +161,16 @@ export default function VendorRegister() {
           password: form.password,
         };
         const res = await registerVendor(payload);
+        console.log('Register response:', res.data);
         const data = res.data?.data || res.data;
-        setVendorId(data?.vendorId || data?.id);
+        const extractedId = data?.vendorId || data?.id || data?.vendor_id || data?.vendor?.id || data?.vendor?.vendorId;
+        console.log('Extracted vendorId:', extractedId);
+        setVendorId(extractedId);
+        // Save token if returned so document upload is authenticated
+        const token = data?.token || res.data?.token;
+        if (token) {
+          localStorage.setItem('bl_token', token);
+        }
         toast.success('Account created! Now upload your documents.');
         setStep(4);
       } catch (err) {
@@ -165,17 +184,23 @@ export default function VendorRegister() {
 
     if (step === 4) {
       // Upload documents (optional, skip allowed)
-      if (documents.length > 0 && vendorId) {
+      if (documents.length > 0) {
+        if (!vendorId) {
+          console.error('vendorId is missing — cannot upload documents');
+          toast.error('Vendor ID missing. Please re-register or upload documents after login.');
+          setStep(5);
+          return;
+        }
         setLoading(true);
         try {
           for (const doc of documents) {
-            const fd = new FormData();
-            fd.append('file', doc.file);
-            fd.append('documentType', doc.type);
-            await uploadVendorDocument(vendorId, fd);
+            console.log('Uploading doc:', doc.name, 'type:', doc.type, 'vendorId:', vendorId);
+            await uploadVendorDocument(vendorId, doc.file, doc.type);
           }
           toast.success('Documents uploaded!');
-        } catch {
+        } catch (err) {
+          console.error('Document upload error:', err);
+          console.error('Response:', err.response?.data);
           toast.error('Document upload failed, but you can upload later.');
         } finally {
           setLoading(false);
@@ -190,7 +215,7 @@ export default function VendorRegister() {
 
   const addDocument = (e) => {
     const files = Array.from(e.target.files);
-    const mapped = files.map(f => ({ file: f, type: 'GENERAL', name: f.name }));
+    const mapped = files.map(f => ({ file: f, type: 'PAN_CARD', name: f.name }));
     setDocuments(p => [...p, ...mapped]);
   };
 
@@ -321,11 +346,11 @@ export default function VendorRegister() {
               </div>
               {/* Doc types */}
               <div className="grid grid-cols-2 gap-2 mb-3">
-                {['Business License', 'Insurance Certificate', 'Tax ID', 'Safety Certification'].map(dt => (
-                  <div key={dt} className="flex items-center gap-2 p-2.5 rounded-xl text-xs text-slate-400"
+                {DOC_TYPES.map(dt => (
+                  <div key={dt.value} className="flex items-center gap-2 p-2.5 rounded-xl text-xs text-slate-400"
                     style={{ background: 'rgba(255,255,255,0.04)', border: '1px solid rgba(255,255,255,0.08)' }}>
                     <FileText size={12} className="text-teal-400 shrink-0" />
-                    {dt}
+                    {dt.label}
                   </div>
                 ))}
               </div>
@@ -333,7 +358,7 @@ export default function VendorRegister() {
               <label className="flex flex-col items-center justify-center gap-3 p-6 rounded-2xl cursor-pointer transition-all"
                 style={{ border: '2px dashed rgba(255,255,255,0.15)', background: 'rgba(255,255,255,0.03)' }}
                 onDragOver={e => e.preventDefault()}
-                onDrop={e => { e.preventDefault(); setDocuments(p => [...p, ...Array.from(e.dataTransfer.files).map(f => ({ file: f, type: 'GENERAL', name: f.name }))]); }}>
+                onDrop={e => { e.preventDefault(); setDocuments(p => [...p, ...Array.from(e.dataTransfer.files).map(f => ({ file: f, type: 'PAN_CARD', name: f.name }))]); }}>
                 <input type="file" multiple accept=".pdf,.png,.jpg,.jpeg" className="hidden" onChange={addDocument} />
                 <Upload size={24} className="text-blue-400" />
                 <div className="text-center">
@@ -345,14 +370,19 @@ export default function VendorRegister() {
               {documents.length > 0 && (
                 <div className="space-y-2">
                   {documents.map((d, i) => (
-                    <div key={i} className="flex items-center justify-between p-3 rounded-xl"
+                    <div key={i} className="flex items-center justify-between gap-2 p-3 rounded-xl"
                       style={{ background: 'rgba(34,197,94,0.1)', border: '1px solid rgba(34,197,94,0.2)' }}>
-                      <div className="flex items-center gap-2">
-                        <FileText size={13} className="text-green-400" />
-                        <p className="text-xs text-slate-300 truncate max-w-[200px]">{d.name}</p>
-                      </div>
+                      <FileText size={13} className="text-green-400 shrink-0" />
+                      <p className="text-xs text-slate-300 truncate flex-1 max-w-[140px]">{d.name}</p>
+                      <select
+                        value={d.type}
+                        onChange={e => setDocuments(p => p.map((doc, j) => j === i ? { ...doc, type: e.target.value } : doc))}
+                        className="text-xs rounded-lg px-2 py-1 outline-none"
+                        style={{ background: 'rgba(15,23,42,0.8)', border: '1px solid rgba(255,255,255,0.15)', color: '#94a3b8' }}>
+                        {DOC_TYPES.map(dt => <option key={dt.value} value={dt.value}>{dt.label}</option>)}
+                      </select>
                       <button onClick={() => setDocuments(p => p.filter((_, j) => j !== i))}
-                        className="text-slate-500 hover:text-red-400 transition-colors">
+                        className="text-slate-500 hover:text-red-400 transition-colors shrink-0">
                         <X size={13} />
                       </button>
                     </div>

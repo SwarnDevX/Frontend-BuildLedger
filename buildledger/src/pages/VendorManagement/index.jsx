@@ -1,13 +1,13 @@
-import { useState, useEffect, useRef } from 'react';
+import { useState, useEffect, useRef, useCallback } from 'react';
 import {
-  Search, Filter, Star, MapPin, Mail, Upload, X, Plus, CheckCircle2, AlertTriangle,
+  Search, Filter, Star, MapPin, Mail, Upload, X, Plus, AlertTriangle,
   Loader2, RefreshCw, FileText, Eye, ThumbsUp, ThumbsDown, Download, UploadCloud,
 } from 'lucide-react';
 import Badge from '../../components/ui/Badge';
 import Modal from '../../components/ui/Modal';
 import {
   getAllVendors, deleteVendor, getVendorDocuments,
-  uploadVendorDocument, verifyDocument, getPendingDocuments, downloadDocument,
+  uploadVendorDocument, verifyDocument, getPendingDocuments, downloadVendorDocument, updateVendor,
 } from '../../api/vendors';
 import { createInternalVendorUser } from '../../api/users';
 import { useAuth } from '../../context/AuthContext';
@@ -25,10 +25,75 @@ const toArray = (value) => {
 
 const normalizeDocument = (doc = {}) => ({
   ...doc,
+  documentId: doc.documentId || doc.docId || doc.id || doc.vendorDocumentId,
+  fileUri: doc.fileUri || doc.uri || doc.url || doc.filePath,
   docType: doc.docType || doc.documentType || 'OTHER',
   verificationStatus: doc.verificationStatus || doc.status || 'PENDING',
   uploadedDate: doc.uploadedDate || doc.uploadedAt || doc.createdAt,
 });
+
+const looksLikeDocument = (value) => {
+  if (!value || typeof value !== 'object') return false;
+  return Boolean(
+    value.documentId || value.fileUri || value.fileName || value.docType || value.documentType || value.verificationStatus || value.status
+  );
+};
+
+const extractDocuments = (payload) => {
+  const candidates = [
+    payload,
+    payload?.data,
+    payload?.data?.data,
+    payload?.documents,
+    payload?.data?.documents,
+    payload?.items,
+    payload?.content,
+    payload?.result,
+  ];
+
+  for (const candidate of candidates) {
+    if (!candidate) continue;
+    const arr = toArray(candidate);
+    if (arr.length) return arr;
+    if (looksLikeDocument(candidate)) return [candidate];
+    if (typeof candidate === 'string' && candidate.trim()) {
+      return [{ fileUri: candidate.trim(), docType: 'OTHER', verificationStatus: 'PENDING' }];
+    }
+  }
+
+  return [];
+};
+
+const getDocumentIdFromDoc = (doc = {}) => {
+  const directId = doc.documentId || doc.docId || doc.id || doc.vendorDocumentId;
+  return directId ? String(directId) : null;
+};
+
+const extractFileNameFromDisposition = (contentDisposition) => {
+  if (!contentDisposition) return null;
+  const utf8 = contentDisposition.match(/filename\*=UTF-8''([^;]+)/i)?.[1];
+  if (utf8) return decodeURIComponent(utf8);
+  const plain = contentDisposition.match(/filename="?([^";]+)"?/i)?.[1];
+  return plain || null;
+};
+
+const extractApiErrorMessage = async (err) => {
+  const direct = err?.response?.data?.message || err?.message;
+  if (direct && typeof direct === 'string' && !/Network Error/i.test(direct)) return direct;
+
+  const blobData = err?.response?.data;
+  if (blobData instanceof Blob) {
+    try {
+      const text = await blobData.text();
+      const parsed = JSON.parse(text);
+      return parsed?.message || parsed?.error || text;
+    } catch {
+      return 'Download failed';
+    }
+  }
+
+  return 'Download failed';
+};
 
 function StatusDot({ status }) {
   const map = { ACTIVE: 'bg-green-500', PENDING: 'bg-amber-500', REJECTED: 'bg-red-500' };
@@ -48,7 +113,7 @@ function DocStatusBadge({ status }) {
   );
 }
 
-function VendorProfilePanel({ vendor, onClose, refreshVendors, refreshPending }) {
+function VendorProfilePanel({ vendor, onClose, refreshVendors, refreshPending, onVendorStatusChange }) {
   const { user } = useAuth();
   const [docs, setDocs]           = useState([]);
   const [loadingDocs, setLoadingDocs] = useState(false);
@@ -56,29 +121,25 @@ function VendorProfilePanel({ vendor, onClose, refreshVendors, refreshPending })
   const [selectedDocType, setSelectedDocType] = useState('PAN_CARD');
   const [dragOver, setDragOver]   = useState(false);
   const [reviewing, setReviewing] = useState({});
-  const [docStatuses, setDocStatuses] = useState({});
   const fileInputRef              = useRef(null);
 
   const canReview  = ['ADMIN', 'PROJECT_MANAGER'].includes(user?.role);
-  const canUpload  = ['ADMIN', 'VENDOR'].includes(user?.role);
+  const canUpload  = user?.role === 'VENDOR';
 
-  const fetchDocs = async () => {
+  const fetchDocs = useCallback(async () => {
     setLoadingDocs(true);
     try {
       const r = await getVendorDocuments(vendor.vendorId);
-      const normalized = toArray(r.data?.data).map(normalizeDocument);
+      const normalized = extractDocuments(r.data).map(normalizeDocument);
       setDocs(normalized);
-      setDocStatuses(
-        normalized.reduce((acc, doc) => {
-          if (doc?.documentId != null) acc[doc.documentId] = doc.verificationStatus || 'PENDING';
-          return acc;
-        }, {})
-      );
     } catch { setDocs([]); }
     finally { setLoadingDocs(false); }
-  };
+  }, [vendor?.vendorId]);
 
-  useEffect(() => { if (vendor) fetchDocs(); }, [vendor]);
+  useEffect(() => {
+    if (!vendor?.vendorId) return;
+    fetchDocs();
+  }, [vendor?.vendorId, fetchDocs]);
 
   const handleUpload = async (file) => {
     if (!file) return;
@@ -112,6 +173,13 @@ function VendorProfilePanel({ vendor, onClose, refreshVendors, refreshPending })
         username: user?.username || user?.name || 'system',
       });
 
+      const nextVendorStatus = status === 'APPROVED' ? 'ACTIVE' : 'REJECTED';
+      try {
+        await updateVendor(vendor.vendorId, { status: nextVendorStatus });
+      } catch {
+        // Backend may already set status from review endpoint; keep UI refresh behavior.
+      }
+
       if (status === 'APPROVED' && ['ADMIN', 'PROJECT_MANAGER'].includes(user?.role) && vendor?.status !== 'ACTIVE') {
         const encodedPassword = vendor?.encodedPassword || vendor?.passwordEncoded || vendor?.passwordHash;
         if (vendor?.username && encodedPassword && vendor?.name) {
@@ -137,7 +205,8 @@ function VendorProfilePanel({ vendor, onClose, refreshVendors, refreshPending })
         }
       }
 
-      toast.success(status === 'APPROVED' ? 'Document approved ✓' : 'Document rejected');
+      onVendorStatusChange?.(vendor.vendorId, nextVendorStatus);
+      toast.success(status === 'APPROVED' ? 'Document accepted' : 'Document rejected');
       fetchDocs();
       refreshVendors?.();
       refreshPending?.();
@@ -147,13 +216,31 @@ function VendorProfilePanel({ vendor, onClose, refreshVendors, refreshPending })
 
 
   const handleDownload = async (doc) => {
+    const docId = getDocumentIdFromDoc(doc);
     try {
-      const res = await downloadDocument(doc.documentId);
-      const url = URL.createObjectURL(new Blob([res.data], { type: 'application/pdf' }));
-      const a = document.createElement('a'); a.href = url;
-      a.download = doc.fileUri || `document-${doc.documentId}.pdf`;
-      a.click(); URL.revokeObjectURL(url);
-    } catch { toast.error('Download failed'); }
+      const res = await downloadVendorDocument({
+        vendorId: vendor?.vendorId,
+        documentId: docId,
+        docType: doc.docType || doc.documentType,
+        fileUri: doc.fileUri,
+      });
+      const contentType = res.headers?.['content-type'] || 'application/pdf';
+
+      // Guard against accidental HTML error payloads.
+      if (/text\/html/i.test(contentType)) throw new Error('Unexpected HTML response');
+
+      const url = URL.createObjectURL(new Blob([res.data], { type: contentType }));
+      const a = document.createElement('a');
+      a.href = url;
+      const serverName = extractFileNameFromDisposition(res.headers?.['content-disposition']);
+      a.download = serverName || `document-${docId || 'vendor'}.pdf`;
+      a.click();
+      URL.revokeObjectURL(url);
+    } catch (err) {
+      const status = err?.response?.status;
+      const message = await extractApiErrorMessage(err);
+      toast.error(status ? `${message} (${status})` : message);
+    }
   };
 
   return (
@@ -272,53 +359,41 @@ function VendorProfilePanel({ vendor, onClose, refreshVendors, refreshPending })
                 <DocStatusBadge status={d.verificationStatus} />
               </div>
 
-              <div className="flex items-center gap-2 pt-1 border-t border-slate-100">
+              <div className="flex items-center gap-2 pt-1 border-t border-slate-100 flex-wrap">
                 {/* Download */}
                 <button
                   onClick={() => handleDownload(d)}
-                  className="flex items-center gap-1 text-[11px] text-blue-600 hover:text-blue-800 font-medium transition-colors"
+                  className="flex items-center gap-1 text-[11px] text-slate-500 hover:text-slate-700 font-medium transition-colors"
                 >
                   <Download size={11} /> Download
                 </button>
 
-                {/* Approve / Reject (PM / ADMIN) */}
+                {/* Accept / Reject — ADMIN & PROJECT_MANAGER only */}
                 {canReview && (
-                  <>
-                    <select
-                      value={docStatuses[d.documentId] || d.verificationStatus || 'PENDING'}
-                      onChange={(e) => setDocStatuses((prev) => ({ ...prev, [d.documentId]: e.target.value }))}
-                      className="ml-auto text-[11px] rounded-lg border border-slate-200 bg-white px-2 py-1 text-slate-700"
-                    >
-                      <option value="PENDING">PENDING</option>
-                      <option value="APPROVED">APPROVED</option>
-                      <option value="REJECTED">REJECTED</option>
-                    </select>
+                  <div className="ml-auto flex items-center gap-2">
                     <button
-                      onClick={() => handleVerify(d.documentId, docStatuses[d.documentId] || 'PENDING')}
-                      disabled={reviewing[d.documentId]}
-                      className="flex items-center gap-1 text-[11px] text-indigo-700 hover:text-indigo-800 font-medium transition-colors disabled:opacity-50"
+                      onClick={() => handleVerify(d.documentId, 'APPROVED')}
+                      disabled={reviewing[d.documentId] || d.verificationStatus === 'APPROVED'}
+                      className={`flex items-center gap-1 text-[11px] font-semibold px-2.5 py-1 rounded-lg transition-all
+                        ${d.verificationStatus === 'APPROVED'
+                          ? 'bg-green-100 text-green-600 cursor-default'
+                          : 'bg-green-50 text-green-700 hover:bg-green-100 border border-green-200 disabled:opacity-50'}`}
                     >
-                      {reviewing[d.documentId] ? <Loader2 size={10} className="animate-spin" /> : <CheckCircle2 size={11} />} Apply
+                      {reviewing[d.documentId] ? <Loader2 size={10} className="animate-spin" /> : <ThumbsUp size={11} />}
+                      {d.verificationStatus === 'APPROVED' ? 'Accepted' : 'Accept'}
                     </button>
-                    {d.verificationStatus === 'PENDING' && (
-                      <>
-                        <button
-                          onClick={() => handleVerify(d.documentId, 'APPROVED')}
-                          disabled={reviewing[d.documentId]}
-                          className="flex items-center gap-1 text-[11px] text-green-700 hover:text-green-800 font-medium transition-colors disabled:opacity-50"
-                        >
-                          {reviewing[d.documentId] ? <Loader2 size={10} className="animate-spin" /> : <ThumbsUp size={11} />} Approve
-                        </button>
-                        <button
-                          onClick={() => handleVerify(d.documentId, 'REJECTED')}
-                          disabled={reviewing[d.documentId]}
-                          className="flex items-center gap-1 text-[11px] text-red-600 hover:text-red-700 font-medium transition-colors disabled:opacity-50"
-                        >
-                          {reviewing[d.documentId] ? <Loader2 size={10} className="animate-spin" /> : <ThumbsDown size={11} />} Reject
-                        </button>
-                      </>
-                    )}
-                  </>
+                    <button
+                      onClick={() => handleVerify(d.documentId, 'REJECTED')}
+                      disabled={reviewing[d.documentId] || d.verificationStatus === 'REJECTED'}
+                      className={`flex items-center gap-1 text-[11px] font-semibold px-2.5 py-1 rounded-lg transition-all
+                        ${d.verificationStatus === 'REJECTED'
+                          ? 'bg-red-100 text-red-600 cursor-default'
+                          : 'bg-red-50 text-red-600 hover:bg-red-100 border border-red-200 disabled:opacity-50'}`}
+                    >
+                      {reviewing[d.documentId] ? <Loader2 size={10} className="animate-spin" /> : <ThumbsDown size={11} />}
+                      {d.verificationStatus === 'REJECTED' ? 'Rejected' : 'Reject'}
+                    </button>
+                  </div>
                 )}
               </div>
             </div>
@@ -337,6 +412,11 @@ export default function VendorManagement() {
   const [statusFilter, setStatusFilter] = useState('All');
   const [selected, setSelected]       = useState(null);
   const [pendingDocs, setPendingDocs] = useState([]);
+
+  const handleVendorStatusChange = (vendorId, status) => {
+    setVendors(prev => prev.map(v => (v.vendorId === vendorId ? { ...v, status } : v)));
+    setSelected(prev => (prev?.vendorId === vendorId ? { ...prev, status } : prev));
+  };
 
   const fetchVendors = async () => {
     setLoading(true);
@@ -519,6 +599,7 @@ export default function VendorManagement() {
             onClose={() => setSelected(null)}
             refreshVendors={fetchVendors}
             refreshPending={fetchPending}
+            onVendorStatusChange={handleVendorStatusChange}
           />
         )}
       </div>
