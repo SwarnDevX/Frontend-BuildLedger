@@ -4,86 +4,220 @@ import { ShieldCheck, AlertTriangle, CheckCircle2, Clock, Plus, Loader2, Refresh
 import Badge from '../../components/ui/Badge';
 import Modal from '../../components/ui/Modal';
 import { getAllCompliance, createCompliance, updateComplianceStatus } from '../../api/compliance';
-import { getAllAudits, createAudit } from '../../api/audits';
+import { getAllAudits, createAudit, updateAuditStatus } from '../../api/audits';
 import { getAllContracts } from '../../api/contracts';
+import { getAllUsers } from '../../api/users';
 import { useAuth } from '../../context/AuthContext';
 import toast from 'react-hot-toast';
 
-// NOTE: Vendor compliance score (0-100) per vendor is not available from the backend.
-//   Future endpoint needed:
-//   GET /compliance/vendor-scores → { vendorId, vendorName, score, risk }[]
-//   Until then, scores are derived from compliance record statuses.
+// Compliance statuses: PENDING, UNDER_REVIEW, PASSED, FAILED, WAIVED
+// Audit statuses:      SCHEDULED, IN_PROGRESS, PENDING_REVIEW, COMPLETED, CANCELLED
 
-const severityColors = { HIGH: '#EF4444', MEDIUM: '#F97316', LOW: '#22C55E', INFO: '#2563EB' };
-const severityBg     = { HIGH: 'bg-red-50 border-red-100', MEDIUM: 'bg-orange-50 border-orange-100', LOW: 'bg-green-50 border-green-100', INFO: 'bg-blue-50 border-blue-100' };
-const PIE_COLORS     = ['#22C55E', '#F59E0B', '#EF4444'];
+const COMPLIANCE_TYPES = ['SAFETY', 'ENVIRONMENTAL', 'FINANCIAL', 'LEGAL', 'QUALITY', 'CONTRACT_TERMS', 'OTHER'];
 
-const EMPTY_COMPLIANCE = { contractId: '', type: '', description: '', status: 'PENDING' };
-const EMPTY_AUDIT      = { contractId: '', title: '', description: '', status: 'SCHEDULED' };
+const PIE_COLORS = ['#22C55E', '#F59E0B', '#EF4444'];
+
+const COMPLIANCE_TRANSITIONS = {
+  PENDING:      ['UNDER_REVIEW'],
+  UNDER_REVIEW: ['PASSED', 'FAILED', 'WAIVED'],
+  FAILED:       ['PENDING'],
+  PASSED:       [],
+  WAIVED:       [],
+};
+
+const COMPLIANCE_TRANSITION_LABELS = {
+  UNDER_REVIEW: { label: 'Start Review',  color: '#2563EB' },
+  PASSED:       { label: 'Mark Passed',   color: '#22C55E' },
+  FAILED:       { label: 'Mark Failed',   color: '#EF4444' },
+  WAIVED:       { label: 'Waive',         color: '#94a3b8' },
+  PENDING:      { label: 'Re-open',       color: '#F59E0B' },
+};
+
+const AUDIT_TRANSITIONS = {
+  SCHEDULED:      ['IN_PROGRESS', 'CANCELLED'],
+  IN_PROGRESS:    ['PENDING_REVIEW', 'CANCELLED'],
+  PENDING_REVIEW: ['COMPLETED', 'CANCELLED'],
+  COMPLETED:      [],
+  CANCELLED:      [],
+};
+
+const AUDIT_TRANSITION_LABELS = {
+  IN_PROGRESS:    { label: 'Start Audit',    color: '#2563EB' },
+  PENDING_REVIEW: { label: 'Submit Review',  color: '#F59E0B' },
+  COMPLETED:      { label: 'Complete',       color: '#22C55E' },
+  CANCELLED:      { label: 'Cancel',         color: '#EF4444' },
+};
+
+function showErrors(err) {
+  const apiErrors = err.response?.data?.data;
+  if (apiErrors && typeof apiErrors === 'object') {
+    const msgs = Object.entries(apiErrors).map(([f, m]) => `${f}: ${m}`).join(' | ');
+    toast.error(msgs);
+  } else {
+    toast.error(err.response?.data?.message || 'Request failed');
+  }
+}
+
+function contractLabel(contracts, contractId) {
+  const c = contracts.find(x => x.contractId === contractId);
+  if (!c) return `#${contractId}`;
+  return `${c.vendorName || 'Unknown'} — ${c.projectName || 'Unknown'} (#${contractId})`;
+}
+
+function ComplianceActions({ record, canManage, onTransition, loading }) {
+  if (!canManage) return null;
+  const nexts = COMPLIANCE_TRANSITIONS[record.status] || [];
+  if (nexts.length === 0) return <span className="text-[10px] text-slate-400">—</span>;
+  return (
+    <div className="flex gap-1 flex-wrap">
+      {nexts.map(next => {
+        const cfg = COMPLIANCE_TRANSITION_LABELS[next];
+        return (
+          <button key={next} onClick={() => onTransition(record.complianceId, next)}
+            disabled={loading[record.complianceId]}
+            className="text-[10px] px-2 py-1 rounded-lg font-semibold text-white disabled:opacity-50"
+            style={{ background: cfg.color }}>
+            {loading[record.complianceId] ? <Loader2 size={9} className="animate-spin inline" /> : cfg.label}
+          </button>
+        );
+      })}
+    </div>
+  );
+}
+
+function AuditActions({ audit, canManage, onTransition, loading }) {
+  if (!canManage) return null;
+  const nexts = AUDIT_TRANSITIONS[audit.status] || [];
+  if (nexts.length === 0) return <span className="text-[10px] text-slate-400">—</span>;
+  return (
+    <div className="flex gap-1 flex-wrap">
+      {nexts.map(next => {
+        const cfg = AUDIT_TRANSITION_LABELS[next];
+        return (
+          <button key={next} onClick={() => onTransition(audit.auditId, next)}
+            disabled={loading[audit.auditId]}
+            className="text-[10px] px-2 py-1 rounded-lg font-semibold text-white disabled:opacity-50"
+            style={{ background: cfg.color }}>
+            {loading[audit.auditId] ? <Loader2 size={9} className="animate-spin inline" /> : cfg.label}
+          </button>
+        );
+      })}
+    </div>
+  );
+}
+
+const EMPTY_COMPLIANCE = { contractId: '', type: '', result: '', date: '', notes: '' };
+const EMPTY_AUDIT      = { complianceOfficerId: '', scope: '', findings: '', date: '' };
 
 export default function ComplianceAudit() {
   const { user } = useAuth();
   const [compliance, setCompliance]   = useState([]);
   const [audits, setAudits]           = useState([]);
   const [contracts, setContracts]     = useState([]);
+  const [officers, setOfficers]       = useState([]);
   const [loading, setLoading]         = useState(true);
   const [showCreateC, setShowCreateC] = useState(false);
   const [showCreateA, setShowCreateA] = useState(false);
   const [formC, setFormC]             = useState(EMPTY_COMPLIANCE);
   const [formA, setFormA]             = useState(EMPTY_AUDIT);
   const [saving, setSaving]           = useState(false);
+  const [cLoading, setCLoading]       = useState({});
+  const [aLoading, setALoading]       = useState({});
 
   const canManage = ['ADMIN', 'COMPLIANCE_OFFICER'].includes(user?.role);
+  const today     = new Date().toISOString().split('T')[0];
 
   const fetchData = async () => {
     setLoading(true);
     try {
-      const [c, a, con] = await Promise.allSettled([getAllCompliance(), getAllAudits(), getAllContracts()]);
+      const [c, a, con, usr] = await Promise.allSettled([
+        getAllCompliance(), getAllAudits(), getAllContracts(), getAllUsers()
+      ]);
       setCompliance(c.status === 'fulfilled' ? (c.value.data?.data || []) : []);
-      setAudits(a.status === 'fulfilled' ? (a.value.data?.data || []) : []);
+      setAudits(a.status === 'fulfilled'     ? (a.value.data?.data || []) : []);
       setContracts(con.status === 'fulfilled' ? (con.value.data?.data || []) : []);
+      if (usr.status === 'fulfilled') {
+        const allUsers = usr.value.data?.data || usr.value.data || [];
+        setOfficers(allUsers.filter(u => u.role === 'COMPLIANCE_OFFICER' || u.role === 'ADMIN'));
+      }
     } catch { toast.error('Failed to load compliance data'); }
     finally { setLoading(false); }
   };
 
   useEffect(() => { fetchData(); }, []);
 
-  // Derived stats
-  const compliant   = compliance.filter(c => c.status === 'COMPLIANT' || c.status === 'APPROVED').length;
-  const nonCompliant= compliance.filter(c => c.status === 'NON_COMPLIANT' || c.status === 'REJECTED').length;
-  const pending     = compliance.filter(c => c.status === 'PENDING').length;
-  const total       = compliance.length || 1;
+  // Derived stats — backend status values: PENDING, UNDER_REVIEW, PASSED, FAILED, WAIVED
+  const compliant    = compliance.filter(c => c.status === 'PASSED' || c.status === 'WAIVED').length;
+  const nonCompliant = compliance.filter(c => c.status === 'FAILED').length;
+  const pending      = compliance.filter(c => c.status === 'PENDING' || c.status === 'UNDER_REVIEW').length;
+  const total        = compliance.length || 1;
   const overallScore = Math.round((compliant / total) * 100);
 
   const pieData = [
-    { name: 'Compliant', value: compliant },
-    { name: 'Pending', value: pending },
-    { name: 'Non-Compliant', value: nonCompliant },
+    { name: 'Passed / Waived', value: compliant },
+    { name: 'Pending / Review', value: pending },
+    { name: 'Failed',           value: nonCompliant },
   ];
-
-  // High/Medium risk alerts from audits
-  const highAlerts   = audits.filter(a => a.severity === 'HIGH' || a.riskLevel === 'HIGH');
-  const mediumAlerts = audits.filter(a => a.severity === 'MEDIUM' || a.riskLevel === 'MEDIUM');
 
   const handleCreateCompliance = async () => {
     if (!formC.contractId) { toast.error('Contract is required'); return; }
+    if (!formC.type)        { toast.error('Compliance type is required'); return; }
+    if (!formC.date)        { toast.error('Date is required'); return; }
     setSaving(true);
     try {
-      await createCompliance({ contractId: Number(formC.contractId), type: formC.type, description: formC.description, status: formC.status });
+      await createCompliance({
+        contractId: Number(formC.contractId),
+        type:       formC.type,
+        result:     formC.result || undefined,
+        date:       formC.date,
+        notes:      formC.notes || undefined,
+      });
       toast.success('Compliance record created');
-      setShowCreateC(false); setFormC(EMPTY_COMPLIANCE); fetchData();
-    } catch (err) { toast.error(err.response?.data?.message || 'Failed'); }
+      setShowCreateC(false);
+      setFormC(EMPTY_COMPLIANCE);
+      fetchData();
+    } catch (err) { showErrors(err); }
     finally { setSaving(false); }
   };
 
   const handleCreateAudit = async () => {
+    if (!formA.complianceOfficerId) { toast.error('Compliance officer is required'); return; }
+    if (!formA.scope || formA.scope.trim().length < 5) { toast.error('Scope must be at least 5 characters'); return; }
+    if (!formA.date) { toast.error('Scheduled date is required'); return; }
     setSaving(true);
     try {
-      await createAudit({ contractId: formA.contractId ? Number(formA.contractId) : undefined, title: formA.title, description: formA.description, status: formA.status });
-      toast.success('Audit created');
-      setShowCreateA(false); setFormA(EMPTY_AUDIT); fetchData();
-    } catch (err) { toast.error(err.response?.data?.message || 'Failed'); }
+      await createAudit({
+        complianceOfficerId: Number(formA.complianceOfficerId),
+        scope:               formA.scope,
+        findings:            formA.findings || undefined,
+        date:                formA.date,
+      });
+      toast.success('Audit scheduled');
+      setShowCreateA(false);
+      setFormA(EMPTY_AUDIT);
+      fetchData();
+    } catch (err) { showErrors(err); }
     finally { setSaving(false); }
+  };
+
+  const handleComplianceTransition = async (id, nextStatus) => {
+    setCLoading(p => ({ ...p, [id]: true }));
+    try {
+      await updateComplianceStatus(id, nextStatus);
+      toast.success(`Compliance → ${nextStatus}`);
+      fetchData();
+    } catch (err) { showErrors(err); }
+    finally { setCLoading(p => ({ ...p, [id]: false })); }
+  };
+
+  const handleAuditTransition = async (id, nextStatus) => {
+    setALoading(p => ({ ...p, [id]: true }));
+    try {
+      await updateAuditStatus(id, nextStatus);
+      toast.success(`Audit → ${nextStatus}`);
+      fetchData();
+    } catch (err) { showErrors(err); }
+    finally { setALoading(p => ({ ...p, [id]: false })); }
   };
 
   const setC = k => e => setFormC(p => ({ ...p, [k]: e.target.value }));
@@ -98,7 +232,7 @@ export default function ComplianceAudit() {
   return (
     <div className="animate-fadeIn space-y-5">
       {/* Header */}
-      <div className="flex items-center justify-between">
+      <div className="flex items-center justify-between flex-wrap gap-3">
         <div>
           <h2 className="text-xl font-bold text-slate-800">Compliance & Audit</h2>
           <p className="text-sm text-slate-400">{compliance.length} compliance records · {audits.length} audits</p>
@@ -114,15 +248,16 @@ export default function ComplianceAudit() {
         </div>
       </div>
 
-      {/* Top row */}
+      {/* Overview row */}
       <div className="grid grid-cols-1 lg:grid-cols-3 gap-4">
         {/* Overall score */}
         <div className="glass-card p-5 flex flex-col items-center justify-center text-center">
           <div className="relative w-32 h-32 mb-3">
             <ResponsiveContainer width="100%" height="100%">
               <PieChart>
-                <Pie data={[{ value: overallScore }, { value: 100 - overallScore }]} cx="50%" cy="50%"
-                  innerRadius={42} outerRadius={54} startAngle={90} endAngle={-270} dataKey="value" strokeWidth={0}>
+                <Pie data={[{ value: overallScore }, { value: 100 - overallScore }]}
+                  cx="50%" cy="50%" innerRadius={42} outerRadius={54} startAngle={90} endAngle={-270}
+                  dataKey="value" strokeWidth={0}>
                   <Cell fill="#2563EB" />
                   <Cell fill="rgba(0,0,0,0.05)" />
                 </Pie>
@@ -134,7 +269,12 @@ export default function ComplianceAudit() {
             </div>
           </div>
           <p className="text-sm font-semibold text-slate-700">Compliance Score</p>
-          <p className="text-xs text-slate-400">Based on {compliance.length} records</p>
+          <p className="text-xs text-slate-400">Based on {compliance.length} record{compliance.length !== 1 ? 's' : ''}</p>
+          <div className="mt-3 grid grid-cols-3 gap-2 w-full text-center text-xs">
+            <div className="bg-green-50 rounded-xl p-2"><p className="font-bold text-green-700">{compliant}</p><p className="text-slate-400 text-[9px]">Passed</p></div>
+            <div className="bg-amber-50 rounded-xl p-2"><p className="font-bold text-amber-700">{pending}</p><p className="text-slate-400 text-[9px]">Pending</p></div>
+            <div className="bg-red-50 rounded-xl p-2"><p className="font-bold text-red-700">{nonCompliant}</p><p className="text-slate-400 text-[9px]">Failed</p></div>
+          </div>
         </div>
 
         {/* Pie breakdown */}
@@ -163,54 +303,64 @@ export default function ComplianceAudit() {
           </div>
         </div>
 
-        {/* Compliance records quick view */}
+        {/* Recent compliance */}
         <div className="glass-card p-5">
           <h3 className="text-sm font-semibold text-slate-700 mb-3">Recent Compliance</h3>
-          <div className="space-y-2.5 overflow-y-auto max-h-[160px]">
-            {compliance.slice(0, 6).map(c => {
-              const contract = contracts.find(co => co.contractId === c.contractId);
-              return (
-                <div key={c.complianceId} className="flex items-center justify-between text-xs">
-                  <span className="text-slate-600 truncate max-w-[130px]">{c.type || contract?.title || `#${c.contractId}` || '—'}</span>
-                  <Badge status={c.status} />
-                </div>
-              );
-            })}
+          <div className="space-y-2.5 overflow-y-auto max-h-[180px]">
+            {compliance.slice(0, 6).map(c => (
+              <div key={c.complianceId} className="flex items-center justify-between text-xs">
+                <span className="text-slate-600 truncate max-w-[130px]">{c.type || contractLabel(contracts, c.contractId)}</span>
+                <Badge status={c.status} />
+              </div>
+            ))}
             {compliance.length === 0 && <p className="text-xs text-slate-400 text-center py-4">No compliance records</p>}
           </div>
         </div>
       </div>
 
-      {/* Risk Alerts */}
-      {(highAlerts.length > 0 || mediumAlerts.length > 0) && (
-        <div className="glass-card p-5">
-          <h3 className="text-sm font-semibold text-slate-700 mb-3 flex items-center gap-2">
-            <AlertTriangle size={15} className="text-red-500" /> Active Risk Alerts
-          </h3>
-          <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
-            {highAlerts.map(a => (
-              <div key={a.auditId} className="flex items-start gap-3 p-3 rounded-xl bg-red-50 border border-red-100">
-                <AlertTriangle size={14} className="text-red-500 shrink-0 mt-0.5" />
-                <div>
-                  <p className="text-xs font-semibold text-red-800">{a.title || a.event || a.description || '—'}</p>
-                  <p className="text-[10px] text-red-400 mt-0.5">{a.createdAt?.slice(0, 16) || '—'}</p>
-                </div>
-              </div>
-            ))}
-            {mediumAlerts.map(a => (
-              <div key={a.auditId} className="flex items-start gap-3 p-3 rounded-xl bg-orange-50 border border-orange-100">
-                <Clock size={14} className="text-orange-500 shrink-0 mt-0.5" />
-                <div>
-                  <p className="text-xs font-semibold text-orange-800">{a.title || a.event || a.description || '—'}</p>
-                  <p className="text-[10px] text-orange-400 mt-0.5">{a.createdAt?.slice(0, 16) || '—'}</p>
-                </div>
-              </div>
-            ))}
-          </div>
+      {/* Compliance Records Table */}
+      <div className="glass-card overflow-hidden">
+        <div className="px-5 py-4 border-b border-slate-100">
+          <h3 className="text-sm font-semibold text-slate-700">Compliance Records</h3>
         </div>
-      )}
+        <div className="overflow-x-auto">
+          <table className="w-full text-sm">
+            <thead className="bg-slate-50/60">
+              <tr>
+                {['ID', 'Contract', 'Type', 'Result', 'Date', 'Status', canManage ? 'Actions' : ''].filter(Boolean).map(h => (
+                  <th key={h} className="text-left px-4 py-3 text-xs font-semibold text-slate-400 uppercase tracking-wide whitespace-nowrap">{h}</th>
+                ))}
+              </tr>
+            </thead>
+            <tbody>
+              {compliance.length === 0 ? (
+                <tr><td colSpan={7} className="px-5 py-10 text-center text-sm text-slate-400">No compliance records found</td></tr>
+              ) : compliance.map(c => (
+                <tr key={c.complianceId} className="border-b border-slate-50 hover:bg-white/50 transition-colors">
+                  <td className="px-4 py-3 text-xs font-mono text-slate-400">#{c.complianceId}</td>
+                  <td className="px-4 py-3 text-xs text-slate-500 max-w-[150px]">
+                    <span className="truncate block">{contractLabel(contracts, c.contractId)}</span>
+                  </td>
+                  <td className="px-4 py-3 text-xs font-medium text-slate-700">{c.type || '—'}</td>
+                  <td className="px-4 py-3 text-xs text-slate-500 max-w-[120px]">
+                    <span className="truncate block">{c.result || '—'}</span>
+                  </td>
+                  <td className="px-4 py-3 text-xs text-slate-400 whitespace-nowrap">{c.date || '—'}</td>
+                  <td className="px-4 py-3"><Badge status={c.status} /></td>
+                  {canManage && (
+                    <td className="px-4 py-3">
+                      <ComplianceActions record={c} canManage={canManage}
+                        onTransition={handleComplianceTransition} loading={cLoading} />
+                    </td>
+                  )}
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </div>
+      </div>
 
-      {/* Audit Log Table */}
+      {/* Audit Records Table */}
       <div className="glass-card overflow-hidden">
         <div className="px-5 py-4 border-b border-slate-100">
           <h3 className="text-sm font-semibold text-slate-700">Audit Records</h3>
@@ -219,67 +369,79 @@ export default function ComplianceAudit() {
           <table className="w-full text-sm">
             <thead className="bg-slate-50/60">
               <tr>
-                {['ID', 'Title / Description', 'Status', 'Severity', 'Date', ''].map(h => (
-                  <th key={h} className="text-left px-5 py-3 text-xs font-semibold text-slate-400 uppercase tracking-wide whitespace-nowrap">{h}</th>
+                {['ID', 'Scope', 'Officer', 'Scheduled', 'Status', canManage ? 'Actions' : ''].filter(Boolean).map(h => (
+                  <th key={h} className="text-left px-4 py-3 text-xs font-semibold text-slate-400 uppercase tracking-wide whitespace-nowrap">{h}</th>
                 ))}
               </tr>
             </thead>
             <tbody>
               {audits.length === 0 ? (
                 <tr><td colSpan={6} className="px-5 py-10 text-center text-sm text-slate-400">No audit records found</td></tr>
-              ) : audits.map(a => {
-                const sev = (a.severity || a.riskLevel || 'INFO').toUpperCase();
-                return (
-                  <tr key={a.auditId} className="border-b border-slate-50 hover:bg-white/50 transition-colors">
-                    <td className="px-5 py-3 text-xs font-mono text-slate-400">#{a.auditId}</td>
-                    <td className="px-5 py-3 text-xs text-slate-700 max-w-xs">{a.title || a.description || '—'}</td>
-                    <td className="px-5 py-3"><Badge status={a.status} /></td>
-                    <td className="px-5 py-3">
-                      <span className={`inline-flex items-center text-[10px] font-bold px-2 py-0.5 rounded-full border ${severityBg[sev] || 'bg-slate-100 border-slate-200'}`}
-                        style={{ color: severityColors[sev] || '#64748b' }}>
-                        {sev}
-                      </span>
+              ) : audits.map(a => (
+                <tr key={a.auditId} className="border-b border-slate-50 hover:bg-white/50 transition-colors">
+                  <td className="px-4 py-3 text-xs font-mono text-slate-400">#{a.auditId}</td>
+                  <td className="px-4 py-3 text-xs text-slate-700 max-w-[200px]">
+                    <p className="truncate">{a.scope || '—'}</p>
+                    {a.findings && <p className="text-[10px] text-slate-400 truncate">{a.findings}</p>}
+                  </td>
+                  <td className="px-4 py-3 text-xs text-slate-500 whitespace-nowrap">{a.officerName || `#${a.complianceOfficerId}` || '—'}</td>
+                  <td className="px-4 py-3 text-xs text-slate-400 whitespace-nowrap">{a.date || '—'}</td>
+                  <td className="px-4 py-3"><Badge status={a.status} /></td>
+                  {canManage && (
+                    <td className="px-4 py-3">
+                      <AuditActions audit={a} canManage={canManage}
+                        onTransition={handleAuditTransition} loading={aLoading} />
                     </td>
-                    <td className="px-5 py-3 text-xs text-slate-400 whitespace-nowrap">{a.createdAt?.slice(0, 10) || '—'}</td>
-                    <td className="px-5 py-3">
-                      {canManage && a.status !== 'COMPLETED' && (
-                        <button onClick={async () => {
-                          try { await updateComplianceStatus(a.auditId, 'COMPLETED'); toast.success('Marked complete'); fetchData(); }
-                          catch { toast.error('Failed'); }
-                        }} className="text-xs text-blue-600 hover:underline">Complete</button>
-                      )}
-                    </td>
-                  </tr>
-                );
-              })}
+                  )}
+                </tr>
+              ))}
             </tbody>
           </table>
         </div>
       </div>
 
       {/* Create Compliance Modal */}
-      <Modal open={showCreateC} onClose={() => setShowCreateC(false)} title="Create Compliance Record">
+      <Modal open={showCreateC} onClose={() => { setShowCreateC(false); setFormC(EMPTY_COMPLIANCE); }} title="Create Compliance Record">
         <div className="space-y-4">
           <div>
             <label className="text-xs font-semibold text-slate-600 block mb-1">Contract *</label>
             <select value={formC.contractId} onChange={setC('contractId')}
-              className="w-full text-sm bg-white/60 border border-slate-200 rounded-xl px-3 py-2.5 outline-none focus:border-blue-400 transition-all">
+              className="w-full text-sm bg-white/60 border border-slate-200 rounded-xl px-3 py-2.5 outline-none focus:border-blue-400">
               <option value="">Select contract…</option>
-              {contracts.map(c => <option key={c.contractId} value={c.contractId}>{c.title || `#${c.contractId}`}</option>)}
+              {contracts.map(c => (
+                <option key={c.contractId} value={c.contractId}>
+                  {c.vendorName || 'Unknown'} — {c.projectName || 'Unknown'} (#{c.contractId})
+                </option>
+              ))}
             </select>
           </div>
           <div>
-            <label className="text-xs font-semibold text-slate-600 block mb-1">Type</label>
-            <input value={formC.type} onChange={setC('type')} placeholder="e.g. Safety, Environmental"
-              className="w-full text-sm bg-white/60 border border-slate-200 rounded-xl px-3 py-2.5 outline-none focus:border-blue-400 transition-all" />
+            <label className="text-xs font-semibold text-slate-600 block mb-1">Compliance Type *</label>
+            <select value={formC.type} onChange={setC('type')}
+              className="w-full text-sm bg-white/60 border border-slate-200 rounded-xl px-3 py-2.5 outline-none focus:border-blue-400">
+              <option value="">Select type…</option>
+              {COMPLIANCE_TYPES.map(t => <option key={t} value={t}>{t.replace('_', ' ')}</option>)}
+            </select>
           </div>
           <div>
-            <label className="text-xs font-semibold text-slate-600 block mb-1">Description</label>
-            <textarea value={formC.description} onChange={setC('description')} rows={2}
-              className="w-full text-sm bg-white/60 border border-slate-200 rounded-xl px-3 py-2.5 outline-none focus:border-blue-400 transition-all resize-none" />
+            <label className="text-xs font-semibold text-slate-600 block mb-1">
+              Date * <span className="text-slate-400 font-normal">(today or earlier)</span>
+            </label>
+            <input type="date" max={today} value={formC.date} onChange={setC('date')}
+              className="w-full text-sm bg-white/60 border border-slate-200 rounded-xl px-3 py-2.5 outline-none focus:border-blue-400" />
+          </div>
+          <div>
+            <label className="text-xs font-semibold text-slate-600 block mb-1">Result <span className="text-slate-400 font-normal">(max 200 chars)</span></label>
+            <input value={formC.result} onChange={setC('result')} maxLength={200} placeholder="Compliance check outcome…"
+              className="w-full text-sm bg-white/60 border border-slate-200 rounded-xl px-3 py-2.5 outline-none focus:border-blue-400" />
+          </div>
+          <div>
+            <label className="text-xs font-semibold text-slate-600 block mb-1">Notes</label>
+            <textarea value={formC.notes} onChange={setC('notes')} rows={2} maxLength={1000}
+              className="w-full text-sm bg-white/60 border border-slate-200 rounded-xl px-3 py-2.5 outline-none focus:border-blue-400 resize-none" />
           </div>
           <div className="flex gap-2 justify-end pt-2">
-            <button className="btn-secondary text-xs" onClick={() => setShowCreateC(false)}>Cancel</button>
+            <button className="btn-secondary text-xs" onClick={() => { setShowCreateC(false); setFormC(EMPTY_COMPLIANCE); }}>Cancel</button>
             <button className="btn-primary text-xs" onClick={handleCreateCompliance} disabled={saving}>
               {saving ? <Loader2 size={12} className="animate-spin" /> : 'Create'}
             </button>
@@ -288,30 +450,41 @@ export default function ComplianceAudit() {
       </Modal>
 
       {/* Create Audit Modal */}
-      <Modal open={showCreateA} onClose={() => setShowCreateA(false)} title="Create Audit">
+      <Modal open={showCreateA} onClose={() => { setShowCreateA(false); setFormA(EMPTY_AUDIT); }} title="Schedule Audit">
         <div className="space-y-4">
           <div>
-            <label className="text-xs font-semibold text-slate-600 block mb-1">Contract</label>
-            <select value={formA.contractId} onChange={setA('contractId')}
-              className="w-full text-sm bg-white/60 border border-slate-200 rounded-xl px-3 py-2.5 outline-none focus:border-blue-400 transition-all">
-              <option value="">General (no specific contract)</option>
-              {contracts.map(c => <option key={c.contractId} value={c.contractId}>{c.title || `#${c.contractId}`}</option>)}
+            <label className="text-xs font-semibold text-slate-600 block mb-1">Compliance Officer *</label>
+            <select value={formA.complianceOfficerId} onChange={setA('complianceOfficerId')}
+              className="w-full text-sm bg-white/60 border border-slate-200 rounded-xl px-3 py-2.5 outline-none focus:border-blue-400">
+              <option value="">Select officer…</option>
+              {officers.map(o => (
+                <option key={o.userId} value={o.userId}>{o.name || o.username} ({o.role})</option>
+              ))}
             </select>
+            {officers.length === 0 && <p className="text-xs text-amber-500 mt-1">No compliance officers found.</p>}
           </div>
           <div>
-            <label className="text-xs font-semibold text-slate-600 block mb-1">Title</label>
-            <input value={formA.title} onChange={setA('title')} placeholder="Audit title"
-              className="w-full text-sm bg-white/60 border border-slate-200 rounded-xl px-3 py-2.5 outline-none focus:border-blue-400 transition-all" />
+            <label className="text-xs font-semibold text-slate-600 block mb-1">Scope * <span className="text-slate-400 font-normal">(min 5 chars, max 300)</span></label>
+            <textarea value={formA.scope} onChange={setA('scope')} rows={3} maxLength={300}
+              placeholder="Describe what this audit covers…"
+              className="w-full text-sm bg-white/60 border border-slate-200 rounded-xl px-3 py-2.5 outline-none focus:border-blue-400 resize-none" />
           </div>
           <div>
-            <label className="text-xs font-semibold text-slate-600 block mb-1">Description</label>
-            <textarea value={formA.description} onChange={setA('description')} rows={2}
-              className="w-full text-sm bg-white/60 border border-slate-200 rounded-xl px-3 py-2.5 outline-none focus:border-blue-400 transition-all resize-none" />
+            <label className="text-xs font-semibold text-slate-600 block mb-1">
+              Scheduled Date * <span className="text-slate-400 font-normal">(today or future)</span>
+            </label>
+            <input type="date" min={today} value={formA.date} onChange={setA('date')}
+              className="w-full text-sm bg-white/60 border border-slate-200 rounded-xl px-3 py-2.5 outline-none focus:border-blue-400" />
+          </div>
+          <div>
+            <label className="text-xs font-semibold text-slate-600 block mb-1">Initial Findings <span className="text-slate-400 font-normal">(optional)</span></label>
+            <textarea value={formA.findings} onChange={setA('findings')} rows={2} maxLength={2000}
+              className="w-full text-sm bg-white/60 border border-slate-200 rounded-xl px-3 py-2.5 outline-none focus:border-blue-400 resize-none" />
           </div>
           <div className="flex gap-2 justify-end pt-2">
-            <button className="btn-secondary text-xs" onClick={() => setShowCreateA(false)}>Cancel</button>
+            <button className="btn-secondary text-xs" onClick={() => { setShowCreateA(false); setFormA(EMPTY_AUDIT); }}>Cancel</button>
             <button className="btn-primary text-xs" onClick={handleCreateAudit} disabled={saving}>
-              {saving ? <Loader2 size={12} className="animate-spin" /> : 'Create Audit'}
+              {saving ? <Loader2 size={12} className="animate-spin" /> : 'Schedule Audit'}
             </button>
           </div>
         </div>
@@ -319,4 +492,3 @@ export default function ComplianceAudit() {
     </div>
   );
 }
-

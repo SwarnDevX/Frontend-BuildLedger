@@ -1,299 +1,556 @@
 import { useState, useEffect } from 'react';
-import { CheckCircle2, Clock, Truck, Package, RotateCcw, Calendar, Loader2, Plus } from 'lucide-react';
+import { CheckCircle2, Clock, Truck, Package, RotateCcw, Calendar, Loader2, Plus, Wrench } from 'lucide-react';
 import Badge from '../../components/ui/Badge';
 import ProgressBar from '../../components/ui/ProgressBar';
 import Modal from '../../components/ui/Modal';
 import { getAllDeliveries, createDelivery, updateDeliveryStatus } from '../../api/deliveries';
+import { getAllServices, createService, updateServiceStatus } from '../../api/services';
 import { getAllContracts } from '../../api/contracts';
 import { useAuth } from '../../context/AuthContext';
 import toast from 'react-hot-toast';
 
-// NOTE: delivery.progress (0–100%) is not a field in the backend response.
-//   Progress is derived from status. Future endpoint needed:
-//   GET /deliveries/{id}/progress → { progress: number }
+// ── Delivery config ────────────────────────────────────────────────────────────
 
-const STATUS_MAP = {
-  PENDING:          { icon: Clock,       color: '#F59E0B', label: 'Pending' },
-  MARKED_DELIVERED: { icon: Truck,       color: '#2563EB', label: 'Marked Delivered' },
-  DELAYED:          { icon: Calendar,    color: '#F97316', label: 'Delayed' },
-  ACCEPTED:         { icon: CheckCircle2,color: '#22C55E', label: 'Accepted' },
-  REJECTED:         { icon: Package,     color: '#EF4444', label: 'Rejected' },
+const DELIVERY_STATUS_MAP = {
+  PENDING:          { icon: Clock,        color: '#F59E0B', label: 'Pending' },
+  MARKED_DELIVERED: { icon: Truck,        color: '#2563EB', label: 'Marked Delivered' },
+  DELAYED:          { icon: Calendar,     color: '#F97316', label: 'Delayed' },
+  ACCEPTED:         { icon: CheckCircle2, color: '#22C55E', label: 'Accepted' },
+  REJECTED:         { icon: Package,      color: '#EF4444', label: 'Rejected' },
 };
 
-const ALLOWED_TRANSITIONS = {
-  PENDING: ['MARKED_DELIVERED', 'DELAYED'],
+const DELIVERY_TRANSITIONS = {
+  PENDING:          ['MARKED_DELIVERED', 'DELAYED'],
   MARKED_DELIVERED: ['ACCEPTED', 'REJECTED'],
-  DELAYED: ['MARKED_DELIVERED'],
-  ACCEPTED: [],
-  REJECTED: [],
+  DELAYED:          ['MARKED_DELIVERED'],
+  ACCEPTED:         [],
+  REJECTED:         [],
 };
 
-const STATUS_ROLE_RULES = {
+const DELIVERY_ROLE_RULES = {
   MARKED_DELIVERED: ['VENDOR', 'ADMIN'],
-  DELAYED: ['VENDOR', 'ADMIN'],
-  ACCEPTED: ['PROJECT_MANAGER', 'ADMIN'],
-  REJECTED: ['PROJECT_MANAGER', 'ADMIN'],
+  DELAYED:          ['VENDOR', 'ADMIN'],
+  ACCEPTED:         ['PROJECT_MANAGER', 'ADMIN'],
+  REJECTED:         ['PROJECT_MANAGER', 'ADMIN'],
 };
 
-function statusProgress(status) {
+function deliveryProgress(status) {
   return { PENDING: 20, DELAYED: 35, MARKED_DELIVERED: 70, ACCEPTED: 100, REJECTED: 100 }[status] ?? 10;
 }
 
-const STEPS = ['PENDING', 'MARKED_DELIVERED', 'ACCEPTED'];
+const DELIVERY_STEPS = ['PENDING', 'MARKED_DELIVERED', 'ACCEPTED'];
 
-const canTransitionTo = (currentStatus, nextStatus, role) => {
-  const next = ALLOWED_TRANSITIONS[currentStatus] || [];
-  if (!next.includes(nextStatus)) return false;
-  return (STATUS_ROLE_RULES[nextStatus] || []).includes(role);
+// ── Service config ─────────────────────────────────────────────────────────────
+
+const SERVICE_STATUS_MAP = {
+  PENDING:     { color: '#F59E0B', label: 'Pending' },
+  IN_PROGRESS: { color: '#2563EB', label: 'In Progress' },
+  COMPLETED:   { color: '#14B8A6', label: 'Completed' },
+  VERIFIED:    { color: '#22C55E', label: 'Verified' },
 };
 
-const transitionLabel = (status) => STATUS_MAP[status]?.label || status.replace(/_/g, ' ');
+const SERVICE_TRANSITIONS = {
+  PENDING:     ['IN_PROGRESS'],
+  IN_PROGRESS: ['COMPLETED'],
+  COMPLETED:   ['VERIFIED'],
+  VERIFIED:    [],
+};
 
-function Stepper({ status }) {
-  const idx = STEPS.indexOf(status);
-  const color = STATUS_MAP[status]?.color || '#94a3b8';
+const SERVICE_ROLE_RULES = {
+  IN_PROGRESS: ['VENDOR', 'ADMIN'],
+  COMPLETED:   ['VENDOR', 'ADMIN'],
+  VERIFIED:    ['PROJECT_MANAGER', 'ADMIN'],
+};
+
+function serviceProgress(status) {
+  return { PENDING: 10, IN_PROGRESS: 40, COMPLETED: 75, VERIFIED: 100 }[status] ?? 10;
+}
+
+// ── Helpers ────────────────────────────────────────────────────────────────────
+
+function contractLabel(contracts, contractId) {
+  const c = contracts.find(x => x.contractId === contractId);
+  if (!c) return `#${contractId}`;
+  return `${c.vendorName || 'Unknown'} — ${c.projectName || 'Unknown'} (#${contractId})`;
+}
+
+function canDoTransition(transitions, roleRules, currentStatus, nextStatus, role) {
+  if (!(transitions[currentStatus] || []).includes(nextStatus)) return false;
+  return (roleRules[nextStatus] || []).includes(role);
+}
+
+function showErrors(err) {
+  const apiErrors = err.response?.data?.data;
+  if (apiErrors && typeof apiErrors === 'object') {
+    const msgs = Object.entries(apiErrors).map(([f, m]) => `${f}: ${m}`).join(' | ');
+    toast.error(msgs);
+  } else {
+    toast.error(err.response?.data?.message || 'Request failed');
+  }
+}
+
+function Stepper({ status, steps }) {
+  const idx = steps.indexOf(status);
   return (
-    <div className="flex items-center gap-1 mt-2">
-      {STEPS.map((s, i) => (
+    <div className="flex items-center gap-1">
+      {steps.map((s, i) => (
         <div key={s} className="flex items-center">
-          <div className={`w-5 h-5 rounded-full flex items-center justify-center text-[9px] font-bold transition-all
-            ${i <= idx ? 'text-white' : 'bg-slate-100 text-slate-400'}`}
-            style={i <= idx ? { background: color } : {}}>
+          <div className={`w-5 h-5 rounded-full flex items-center justify-center text-[9px] font-bold
+            ${i <= idx ? 'bg-blue-600 text-white' : 'bg-slate-100 text-slate-400'}`}>
             {i < idx ? '✓' : i + 1}
           </div>
-          {i < STEPS.length - 1 && (
-            <div className={`w-6 h-0.5 ${i < idx ? '' : 'bg-slate-200'}`}
-              style={i < idx ? { background: color } : {}} />
-          )}
+          {i < steps.length - 1 && <div className={`w-5 h-0.5 ${i < idx ? 'bg-blue-500' : 'bg-slate-200'}`} />}
         </div>
       ))}
     </div>
   );
 }
 
-const EMPTY_FORM = { contractId: '', item: '', quantity: '', scheduledDate: '', notes: '' };
+function ActionButtons({ transitions, roleRules, currentStatus, role, onTransition, loadingKey, itemKey }) {
+  const available = (transitions[currentStatus] || []).filter(next =>
+    canDoTransition(transitions, roleRules, currentStatus, next, role));
+  if (available.length === 0) return <span className="text-[11px] text-slate-400">—</span>;
+  return (
+    <div className="flex gap-1.5 flex-wrap">
+      {available.map(next => {
+        const label = Object.assign({}, DELIVERY_STATUS_MAP, SERVICE_STATUS_MAP)[next]?.label || next;
+        const color = Object.assign({}, DELIVERY_STATUS_MAP, SERVICE_STATUS_MAP)[next]?.color || '#64748b';
+        return (
+          <button key={next} onClick={() => onTransition(itemKey, next)} disabled={loadingKey}
+            className="text-[11px] px-2.5 py-1 rounded-lg font-semibold text-white disabled:opacity-50"
+            style={{ background: color }}>
+            {loadingKey ? <Loader2 size={10} className="animate-spin inline" /> : label}
+          </button>
+        );
+      })}
+    </div>
+  );
+}
+
+// ── Empty forms ────────────────────────────────────────────────────────────────
+
+const EMPTY_DELIVERY = { contractId: '', item: '', quantity: '', unit: '', date: '', remarks: '' };
+const EMPTY_SERVICE  = { contractId: '', description: '', completionDate: '', remarks: '' };
+
+// ── Main component ─────────────────────────────────────────────────────────────
 
 export default function DeliveryTracking() {
   const { user } = useAuth();
+  const [tab, setTab]               = useState('deliveries');
   const [deliveries, setDeliveries] = useState([]);
+  const [services, setServices]     = useState([]);
   const [contracts, setContracts]   = useState([]);
   const [loading, setLoading]       = useState(true);
   const [filter, setFilter]         = useState('All');
-  const [showCreate, setShowCreate] = useState(false);
-  const [form, setForm]             = useState(EMPTY_FORM);
+  const [svcFilter, setSvcFilter]   = useState('All');
+  const [showCreateD, setShowCreateD] = useState(false);
+  const [showCreateS, setShowCreateS] = useState(false);
+  const [formD, setFormD]           = useState(EMPTY_DELIVERY);
+  const [formS, setFormS]           = useState(EMPTY_SERVICE);
   const [saving, setSaving]         = useState(false);
   const [updating, setUpdating]     = useState({});
 
   const canCreate = ['ADMIN', 'VENDOR'].includes(user?.role);
-  const statuses  = ['All', ...Object.keys(STATUS_MAP)];
+  const today     = new Date().toISOString().split('T')[0];
 
   const fetchData = async () => {
     setLoading(true);
     try {
-      const [d, c] = await Promise.allSettled([getAllDeliveries(), getAllContracts()]);
+      const [d, s, c] = await Promise.allSettled([getAllDeliveries(), getAllServices(), getAllContracts()]);
       setDeliveries(d.status === 'fulfilled' ? (d.value.data?.data || []) : []);
-      setContracts(c.status === 'fulfilled' ? (c.value.data?.data || []) : []);
-    } catch { toast.error('Failed to load deliveries'); }
+      setServices(s.status === 'fulfilled'   ? (s.value.data?.data || []) : []);
+      setContracts(c.status === 'fulfilled'  ? (c.value.data?.data || []) : []);
+    } catch { toast.error('Failed to load data'); }
     finally { setLoading(false); }
   };
 
   useEffect(() => { fetchData(); }, []);
 
-  const filtered = filter === 'All' ? deliveries : deliveries.filter(d => d.status === filter);
+  // ── Delivery handlers ──────────────────────────────────────────────────────
 
-  const handleCreate = async () => {
-    if (!form.contractId || !form.item) { toast.error('Contract and item are required'); return; }
+  const handleCreateDelivery = async () => {
+    if (!formD.contractId) { toast.error('Contract is required'); return; }
+    if (!formD.item)       { toast.error('Item is required'); return; }
+    if (!formD.quantity)   { toast.error('Quantity is required'); return; }
+    if (!formD.date)       { toast.error('Delivery date is required'); return; }
     setSaving(true);
     try {
       await createDelivery({
-        contractId: Number(form.contractId),
-        item: form.item,
-        quantity: form.quantity || undefined,
-        scheduledDate: form.scheduledDate || undefined,
-        notes: form.notes || undefined,
-        status: 'PENDING',
+        contractId: Number(formD.contractId),
+        item:       formD.item,
+        quantity:   Number(formD.quantity),
+        unit:       formD.unit || undefined,
+        date:       formD.date,
+        remarks:    formD.remarks || undefined,
       });
       toast.success('Delivery created');
-      setShowCreate(false);
-      setForm(EMPTY_FORM);
+      setShowCreateD(false);
+      setFormD(EMPTY_DELIVERY);
       fetchData();
-    } catch (err) {
-      toast.error(err.response?.data?.message || 'Failed to create delivery');
-    } finally { setSaving(false); }
+    } catch (err) { showErrors(err); }
+    finally { setSaving(false); }
   };
 
-  const set = k => e => setForm(p => ({ ...p, [k]: e.target.value }));
-
-  const handleStatusTransition = async (deliveryId, fromStatus, nextStatus) => {
-    if (!canTransitionTo(fromStatus, nextStatus, user?.role)) {
-      toast.error('Status transition is not allowed for your role');
-      return;
-    }
-    setUpdating((prev) => ({ ...prev, [deliveryId]: true }));
+  const handleDeliveryTransition = async (deliveryId, nextStatus) => {
+    setUpdating(p => ({ ...p, [`d-${deliveryId}`]: true }));
     try {
       await updateDeliveryStatus(deliveryId, nextStatus);
-      toast.success(`Delivery moved to ${transitionLabel(nextStatus)}`);
+      toast.success(`Delivery → ${DELIVERY_STATUS_MAP[nextStatus]?.label || nextStatus}`);
       fetchData();
-    } catch (err) {
-      toast.error(err.response?.data?.message || 'Failed to update delivery status');
-    } finally {
-      setUpdating((prev) => ({ ...prev, [deliveryId]: false }));
-    }
+    } catch (err) { showErrors(err); }
+    finally { setUpdating(p => ({ ...p, [`d-${deliveryId}`]: false })); }
   };
+
+  // ── Service handlers ───────────────────────────────────────────────────────
+
+  const handleCreateService = async () => {
+    if (!formS.contractId)    { toast.error('Contract is required'); return; }
+    if (!formS.description || formS.description.trim().length < 10)
+      { toast.error('Description must be at least 10 characters'); return; }
+    if (!formS.completionDate) { toast.error('Completion date is required'); return; }
+    setSaving(true);
+    try {
+      await createService({
+        contractId:     Number(formS.contractId),
+        description:    formS.description,
+        completionDate: formS.completionDate,
+        remarks:        formS.remarks || undefined,
+      });
+      toast.success('Service created');
+      setShowCreateS(false);
+      setFormS(EMPTY_SERVICE);
+      fetchData();
+    } catch (err) { showErrors(err); }
+    finally { setSaving(false); }
+  };
+
+  const handleServiceTransition = async (serviceId, nextStatus) => {
+    setUpdating(p => ({ ...p, [`s-${serviceId}`]: true }));
+    try {
+      await updateServiceStatus(serviceId, nextStatus);
+      toast.success(`Service → ${SERVICE_STATUS_MAP[nextStatus]?.label || nextStatus}`);
+      fetchData();
+    } catch (err) { showErrors(err); }
+    finally { setUpdating(p => ({ ...p, [`s-${serviceId}`]: false })); }
+  };
+
+  const setD = k => e => setFormD(p => ({ ...p, [k]: e.target.value }));
+  const setS = k => e => setFormS(p => ({ ...p, [k]: e.target.value }));
 
   if (loading) return (
     <div className="flex items-center justify-center h-64 gap-2 text-slate-400">
-      <Loader2 size={20} className="animate-spin text-blue-500" /><span className="text-sm">Loading deliveries…</span>
+      <Loader2 size={20} className="animate-spin text-blue-500" /><span className="text-sm">Loading…</span>
     </div>
   );
+
+  const filteredDeliveries = filter === 'All' ? deliveries : deliveries.filter(d => d.status === filter);
+  const filteredServices   = svcFilter === 'All' ? services : services.filter(s => s.status === svcFilter);
 
   return (
     <div className="animate-fadeIn space-y-5">
       {/* Header */}
-      <div className="flex items-center justify-between">
+      <div className="flex items-center justify-between flex-wrap gap-3">
         <div>
-          <h2 className="text-xl font-bold text-slate-800">Delivery Tracking</h2>
-          <p className="text-sm text-slate-400">{deliveries.length} total deliveries</p>
+          <h2 className="text-xl font-bold text-slate-800">Delivery & Service Tracking</h2>
+          <p className="text-sm text-slate-400">{deliveries.length} deliveries · {services.length} services</p>
         </div>
         <div className="flex gap-2">
           <button onClick={fetchData} className="btn-secondary text-xs"><RotateCcw size={13} /> Refresh</button>
-          {canCreate && (
-            <button onClick={() => setShowCreate(true)} className="btn-primary text-xs"><Plus size={13} /> New Delivery</button>
+          {canCreate && tab === 'deliveries' && (
+            <button onClick={() => setShowCreateD(true)} className="btn-primary text-xs"><Plus size={13} /> New Delivery</button>
+          )}
+          {canCreate && tab === 'services' && (
+            <button onClick={() => setShowCreateS(true)} className="btn-primary text-xs"><Plus size={13} /> New Service</button>
           )}
         </div>
       </div>
 
-      {/* Summary cards */}
-      <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
-        {['PENDING', 'MARKED_DELIVERED', 'DELAYED', 'ACCEPTED', 'REJECTED'].map(s => {
-          const cfg = STATUS_MAP[s];
-          const Icon = cfg.icon;
-          const count = deliveries.filter(d => d.status === s).length;
+      {/* Tabs */}
+      <div className="flex gap-1 border-b border-slate-200">
+        {[
+          { key: 'deliveries', label: 'Deliveries', icon: Truck },
+          { key: 'services',   label: 'Services',   icon: Wrench },
+        ].map(t => {
+          const Icon = t.icon;
           return (
-            <div key={s} className="glass-card p-4 flex items-center gap-3">
-              <div className="w-10 h-10 rounded-xl flex items-center justify-center" style={{ background: `${cfg.color}18` }}>
-                <Icon size={18} style={{ color: cfg.color }} />
-              </div>
-              <div>
-                <p className="text-lg font-bold text-slate-800">{count}</p>
-                <p className="text-[10px] text-slate-400">{cfg.label}</p>
-              </div>
-            </div>
+            <button key={t.key} onClick={() => setTab(t.key)}
+              className={`flex items-center gap-2 px-4 py-2.5 text-xs font-semibold rounded-t-lg transition-all
+                ${tab === t.key ? 'bg-blue-600 text-white' : 'text-slate-500 hover:text-slate-700'}`}>
+              <Icon size={13} /> {t.label}
+            </button>
           );
         })}
       </div>
 
-      {/* Filter */}
-      <div className="flex gap-2 flex-wrap">
-        {statuses.map(s => (
-          <button key={s} onClick={() => setFilter(s)}
-            className={`text-xs px-3 py-1.5 rounded-full font-medium transition-all ${filter === s ? 'bg-blue-600 text-white shadow-sm' : 'glass text-slate-500 hover:bg-white'}`}>
-            {STATUS_MAP[s]?.label || s}
-          </button>
-        ))}
-      </div>
+      {/* ── DELIVERIES TAB ── */}
+      {tab === 'deliveries' && (
+        <>
+          {/* Summary cards */}
+          <div className="grid grid-cols-2 sm:grid-cols-5 gap-3">
+            {Object.entries(DELIVERY_STATUS_MAP).map(([s, cfg]) => {
+              const Icon = cfg.icon;
+              const count = deliveries.filter(d => d.status === s).length;
+              return (
+                <div key={s} className="glass-card p-4 flex items-center gap-3">
+                  <div className="w-9 h-9 rounded-xl flex items-center justify-center" style={{ background: `${cfg.color}18` }}>
+                    <Icon size={16} style={{ color: cfg.color }} />
+                  </div>
+                  <div>
+                    <p className="text-lg font-bold text-slate-800">{count}</p>
+                    <p className="text-[10px] text-slate-400">{cfg.label}</p>
+                  </div>
+                </div>
+              );
+            })}
+          </div>
 
-      {/* Timeline table */}
-      <div className="glass-card overflow-hidden">
-        <div className="overflow-x-auto">
-          <table className="w-full text-sm">
-            <thead className="bg-slate-50/60 border-b border-slate-100">
-              <tr>
-                {['ID', 'Item', 'Contract', 'Quantity', 'Scheduled Date', 'Status', 'Progress', 'Steps', 'Actions'].map(h => (
-                  <th key={h} className="text-left px-5 py-3 text-xs font-semibold text-slate-400 uppercase tracking-wide whitespace-nowrap">{h}</th>
-                ))}
-              </tr>
-            </thead>
-            <tbody>
-              {filtered.length === 0 ? (
-                <tr><td colSpan={9} className="px-5 py-10 text-center text-sm text-slate-400">No deliveries found</td></tr>
-              ) : filtered.map(d => {
-                const cfg = STATUS_MAP[d.status] || STATUS_MAP.PENDING;
-                const Icon = cfg.icon;
-                const progress = statusProgress(d.status);
-                const contract = contracts.find(c => c.contractId === d.contractId);
-                const transitions = (ALLOWED_TRANSITIONS[d.status] || []).filter(next => canTransitionTo(d.status, next, user?.role));
-                return (
-                  <tr key={d.deliveryId} className="border-b border-slate-50 hover:bg-white/50 transition-colors">
-                    <td className="px-5 py-4 text-xs font-mono text-blue-600 font-semibold">#{d.deliveryId}</td>
-                    <td className="px-5 py-4">
-                      <p className="text-xs font-semibold text-slate-800">{d.item || d.description || '—'}</p>
-                      {d.notes && <p className="text-[10px] text-slate-400">{d.notes}</p>}
-                    </td>
-                    <td className="px-5 py-4 text-xs text-slate-500">
-                      {contract ? (contract.title || `#${d.contractId}`) : `#${d.contractId || '—'}`}
-                    </td>
-                    <td className="px-5 py-4 text-xs text-slate-600 font-medium">{d.quantity || '—'}</td>
-                    <td className="px-5 py-4 text-xs text-slate-500">{d.scheduledDate || d.expectedDate || '—'}</td>
-                    <td className="px-5 py-4"><Badge status={d.status} /></td>
-                    <td className="px-5 py-4 w-32">
-                      <ProgressBar value={progress} color={cfg.color} showLabel />
-                    </td>
-                    <td className="px-5 py-4">
-                      <Stepper status={d.status} />
-                    </td>
-                    <td className="px-5 py-4">
-                      <div className="flex gap-1.5 flex-wrap">
-                        {transitions.length === 0 && (
-                          <span className="text-[11px] text-slate-400">No actions</span>
-                        )}
-                        {transitions.map(next => (
-                          <button
-                            key={next}
-                            onClick={() => handleStatusTransition(d.deliveryId, d.status, next)}
-                            disabled={updating[d.deliveryId]}
-                            className="text-[11px] px-2 py-1 rounded-lg border border-slate-200 bg-white hover:bg-slate-50 text-slate-700 disabled:opacity-60"
-                          >
-                            {updating[d.deliveryId] ? 'Updating…' : transitionLabel(next)}
-                          </button>
-                        ))}
-                      </div>
-                    </td>
+          {/* Filter */}
+          <div className="flex gap-2 flex-wrap">
+            {['All', ...Object.keys(DELIVERY_STATUS_MAP)].map(s => (
+              <button key={s} onClick={() => setFilter(s)}
+                className={`text-xs px-3 py-1.5 rounded-full font-medium transition-all
+                  ${filter === s ? 'bg-blue-600 text-white shadow-sm' : 'glass text-slate-500 hover:bg-white'}`}>
+                {DELIVERY_STATUS_MAP[s]?.label || s}
+              </button>
+            ))}
+          </div>
+
+          {/* Table */}
+          <div className="glass-card overflow-hidden">
+            <div className="overflow-x-auto">
+              <table className="w-full text-sm">
+                <thead className="bg-slate-50/60 border-b border-slate-100">
+                  <tr>
+                    {['ID', 'Item', 'Contract', 'Qty / Unit', 'Delivery Date', 'Status', 'Progress', 'Steps', 'Actions'].map(h => (
+                      <th key={h} className="text-left px-4 py-3 text-xs font-semibold text-slate-400 uppercase tracking-wide whitespace-nowrap">{h}</th>
+                    ))}
                   </tr>
-                );
-              })}
-            </tbody>
-          </table>
-        </div>
-      </div>
+                </thead>
+                <tbody>
+                  {filteredDeliveries.length === 0 ? (
+                    <tr><td colSpan={9} className="px-5 py-10 text-center text-sm text-slate-400">No deliveries found</td></tr>
+                  ) : filteredDeliveries.map(d => {
+                    const cfg      = DELIVERY_STATUS_MAP[d.status] || DELIVERY_STATUS_MAP.PENDING;
+                    const progress = deliveryProgress(d.status);
+                    return (
+                      <tr key={d.deliveryId} className="border-b border-slate-50 hover:bg-white/50 transition-colors">
+                        <td className="px-4 py-3 text-xs font-mono text-blue-600 font-semibold">#{d.deliveryId}</td>
+                        <td className="px-4 py-3">
+                          <p className="text-xs font-semibold text-slate-800">{d.item || '—'}</p>
+                          {d.remarks && <p className="text-[10px] text-slate-400 truncate max-w-[120px]">{d.remarks}</p>}
+                        </td>
+                        <td className="px-4 py-3 text-xs text-slate-500 max-w-[140px]">
+                          <span className="truncate block">{contractLabel(contracts, d.contractId)}</span>
+                        </td>
+                        <td className="px-4 py-3 text-xs text-slate-600 font-medium whitespace-nowrap">
+                          {d.quantity ? `${d.quantity}${d.unit ? ` ${d.unit}` : ''}` : '—'}
+                        </td>
+                        <td className="px-4 py-3 text-xs text-slate-500 whitespace-nowrap">{d.date || '—'}</td>
+                        <td className="px-4 py-3"><Badge status={d.status} /></td>
+                        <td className="px-4 py-3 w-28">
+                          <ProgressBar value={progress} color={cfg.color} showLabel />
+                        </td>
+                        <td className="px-4 py-3">
+                          <Stepper status={d.status} steps={DELIVERY_STEPS} />
+                        </td>
+                        <td className="px-4 py-3">
+                          <ActionButtons
+                            transitions={DELIVERY_TRANSITIONS}
+                            roleRules={DELIVERY_ROLE_RULES}
+                            currentStatus={d.status}
+                            role={user?.role}
+                            onTransition={(_, next) => handleDeliveryTransition(d.deliveryId, next)}
+                            loadingKey={updating[`d-${d.deliveryId}`]}
+                            itemKey={d.deliveryId}
+                          />
+                        </td>
+                      </tr>
+                    );
+                  })}
+                </tbody>
+              </table>
+            </div>
+          </div>
+        </>
+      )}
 
-      {/* Create Delivery Modal */}
-      <Modal open={showCreate} onClose={() => setShowCreate(false)} title="Create Delivery">
+      {/* ── SERVICES TAB ── */}
+      {tab === 'services' && (
+        <>
+          {/* Summary cards */}
+          <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
+            {Object.entries(SERVICE_STATUS_MAP).map(([s, cfg]) => {
+              const count = services.filter(x => x.status === s).length;
+              return (
+                <div key={s} className="glass-card p-4 flex items-center gap-3">
+                  <div className="w-9 h-9 rounded-xl flex items-center justify-center" style={{ background: `${cfg.color}18` }}>
+                    <Wrench size={16} style={{ color: cfg.color }} />
+                  </div>
+                  <div>
+                    <p className="text-lg font-bold text-slate-800">{count}</p>
+                    <p className="text-[10px] text-slate-400">{cfg.label}</p>
+                  </div>
+                </div>
+              );
+            })}
+          </div>
+
+          {/* Filter */}
+          <div className="flex gap-2 flex-wrap">
+            {['All', ...Object.keys(SERVICE_STATUS_MAP)].map(s => (
+              <button key={s} onClick={() => setSvcFilter(s)}
+                className={`text-xs px-3 py-1.5 rounded-full font-medium transition-all
+                  ${svcFilter === s ? 'bg-blue-600 text-white shadow-sm' : 'glass text-slate-500 hover:bg-white'}`}>
+                {SERVICE_STATUS_MAP[s]?.label || s}
+              </button>
+            ))}
+          </div>
+
+          {/* Table */}
+          <div className="glass-card overflow-hidden">
+            <div className="overflow-x-auto">
+              <table className="w-full text-sm">
+                <thead className="bg-slate-50/60 border-b border-slate-100">
+                  <tr>
+                    {['ID', 'Description', 'Contract', 'Completion Date', 'Status', 'Progress', 'Actions'].map(h => (
+                      <th key={h} className="text-left px-4 py-3 text-xs font-semibold text-slate-400 uppercase tracking-wide whitespace-nowrap">{h}</th>
+                    ))}
+                  </tr>
+                </thead>
+                <tbody>
+                  {filteredServices.length === 0 ? (
+                    <tr><td colSpan={7} className="px-5 py-10 text-center text-sm text-slate-400">No services found</td></tr>
+                  ) : filteredServices.map(s => {
+                    const progress = serviceProgress(s.status);
+                    const cfg      = SERVICE_STATUS_MAP[s.status] || SERVICE_STATUS_MAP.PENDING;
+                    return (
+                      <tr key={s.serviceId} className="border-b border-slate-50 hover:bg-white/50 transition-colors">
+                        <td className="px-4 py-3 text-xs font-mono text-blue-600 font-semibold">#{s.serviceId}</td>
+                        <td className="px-4 py-3">
+                          <p className="text-xs text-slate-700 max-w-[200px] truncate">{s.description || '—'}</p>
+                          {s.remarks && <p className="text-[10px] text-slate-400 truncate max-w-[200px]">{s.remarks}</p>}
+                        </td>
+                        <td className="px-4 py-3 text-xs text-slate-500 max-w-[140px]">
+                          <span className="truncate block">{contractLabel(contracts, s.contractId)}</span>
+                        </td>
+                        <td className="px-4 py-3 text-xs text-slate-500 whitespace-nowrap">{s.completionDate || '—'}</td>
+                        <td className="px-4 py-3"><Badge status={s.status} /></td>
+                        <td className="px-4 py-3 w-28">
+                          <ProgressBar value={progress} color={cfg.color} showLabel />
+                        </td>
+                        <td className="px-4 py-3">
+                          <ActionButtons
+                            transitions={SERVICE_TRANSITIONS}
+                            roleRules={SERVICE_ROLE_RULES}
+                            currentStatus={s.status}
+                            role={user?.role}
+                            onTransition={(_, next) => handleServiceTransition(s.serviceId, next)}
+                            loadingKey={updating[`s-${s.serviceId}`]}
+                            itemKey={s.serviceId}
+                          />
+                        </td>
+                      </tr>
+                    );
+                  })}
+                </tbody>
+              </table>
+            </div>
+          </div>
+        </>
+      )}
+
+      {/* ── Create Delivery Modal ── */}
+      <Modal open={showCreateD} onClose={() => { setShowCreateD(false); setFormD(EMPTY_DELIVERY); }} title="Create Delivery">
         <div className="space-y-4">
           <div>
             <label className="text-xs font-semibold text-slate-600 block mb-1">Contract *</label>
-            <select value={form.contractId} onChange={set('contractId')}
-              className="w-full text-sm bg-white/60 border border-slate-200 rounded-xl px-3 py-2.5 outline-none focus:border-blue-400 transition-all">
+            <select value={formD.contractId} onChange={setD('contractId')}
+              className="w-full text-sm bg-white/60 border border-slate-200 rounded-xl px-3 py-2.5 outline-none focus:border-blue-400">
               <option value="">Select contract…</option>
-              {contracts.map(c => (
-                <option key={c.contractId} value={c.contractId}>{c.title || `Contract #${c.contractId}`}</option>
+              {contracts.filter(c => c.status === 'ACTIVE').map(c => (
+                <option key={c.contractId} value={c.contractId}>
+                  {c.vendorName || 'Unknown'} — {c.projectName || 'Unknown'} (#{c.contractId})
+                </option>
+              ))}
+            </select>
+            {contracts.filter(c => c.status === 'ACTIVE').length === 0 && (
+              <p className="text-xs text-amber-500 mt-1">No active contracts. Activate a contract first.</p>
+            )}
+          </div>
+          <div>
+            <label className="text-xs font-semibold text-slate-600 block mb-1">Item *</label>
+            <input value={formD.item} onChange={setD('item')} placeholder="Item description (min 2 chars)"
+              className="w-full text-sm bg-white/60 border border-slate-200 rounded-xl px-3 py-2.5 outline-none focus:border-blue-400" />
+          </div>
+          <div className="grid grid-cols-2 gap-3">
+            <div>
+              <label className="text-xs font-semibold text-slate-600 block mb-1">Quantity *</label>
+              <input type="number" min="0.01" step="0.01" value={formD.quantity} onChange={setD('quantity')} placeholder="0.00"
+                className="w-full text-sm bg-white/60 border border-slate-200 rounded-xl px-3 py-2.5 outline-none focus:border-blue-400" />
+            </div>
+            <div>
+              <label className="text-xs font-semibold text-slate-600 block mb-1">Unit</label>
+              <input value={formD.unit} onChange={setD('unit')} placeholder="tons, kg, pcs…"
+                className="w-full text-sm bg-white/60 border border-slate-200 rounded-xl px-3 py-2.5 outline-none focus:border-blue-400" />
+            </div>
+          </div>
+          <div>
+            <label className="text-xs font-semibold text-slate-600 block mb-1">
+              Delivery Date * <span className="text-slate-400 font-normal">(today or earlier)</span>
+            </label>
+            <input type="date" max={today} value={formD.date} onChange={setD('date')}
+              className="w-full text-sm bg-white/60 border border-slate-200 rounded-xl px-3 py-2.5 outline-none focus:border-blue-400" />
+          </div>
+          <div>
+            <label className="text-xs font-semibold text-slate-600 block mb-1">Remarks</label>
+            <textarea value={formD.remarks} onChange={setD('remarks')} rows={2} placeholder="Optional remarks…"
+              className="w-full text-sm bg-white/60 border border-slate-200 rounded-xl px-3 py-2.5 outline-none focus:border-blue-400 resize-none" />
+          </div>
+          <div className="flex gap-2 justify-end pt-2">
+            <button className="btn-secondary text-xs" onClick={() => { setShowCreateD(false); setFormD(EMPTY_DELIVERY); }}>Cancel</button>
+            <button className="btn-primary text-xs" onClick={handleCreateDelivery} disabled={saving}>
+              {saving ? <><Loader2 size={12} className="animate-spin" /> Creating…</> : 'Create Delivery'}
+            </button>
+          </div>
+        </div>
+      </Modal>
+
+      {/* ── Create Service Modal ── */}
+      <Modal open={showCreateS} onClose={() => { setShowCreateS(false); setFormS(EMPTY_SERVICE); }} title="Create Service">
+        <div className="space-y-4">
+          <div>
+            <label className="text-xs font-semibold text-slate-600 block mb-1">Contract *</label>
+            <select value={formS.contractId} onChange={setS('contractId')}
+              className="w-full text-sm bg-white/60 border border-slate-200 rounded-xl px-3 py-2.5 outline-none focus:border-blue-400">
+              <option value="">Select contract…</option>
+              {contracts.filter(c => c.status === 'ACTIVE').map(c => (
+                <option key={c.contractId} value={c.contractId}>
+                  {c.vendorName || 'Unknown'} — {c.projectName || 'Unknown'} (#{c.contractId})
+                </option>
               ))}
             </select>
           </div>
           <div>
-            <label className="text-xs font-semibold text-slate-600 block mb-1">Item *</label>
-            <input value={form.item} onChange={set('item')} placeholder="Item description"
-              className="w-full text-sm bg-white/60 border border-slate-200 rounded-xl px-3 py-2.5 outline-none focus:border-blue-400 transition-all" />
+            <label className="text-xs font-semibold text-slate-600 block mb-1">Description * <span className="text-slate-400 font-normal">(min 10 chars)</span></label>
+            <textarea value={formS.description} onChange={setS('description')} rows={3} placeholder="Describe the service to be provided…"
+              className="w-full text-sm bg-white/60 border border-slate-200 rounded-xl px-3 py-2.5 outline-none focus:border-blue-400 resize-none" />
           </div>
           <div>
-            <label className="text-xs font-semibold text-slate-600 block mb-1">Quantity</label>
-            <input value={form.quantity} onChange={set('quantity')} placeholder="e.g. 100 tons"
-              className="w-full text-sm bg-white/60 border border-slate-200 rounded-xl px-3 py-2.5 outline-none focus:border-blue-400 transition-all" />
+            <label className="text-xs font-semibold text-slate-600 block mb-1">
+              Expected Completion Date * <span className="text-slate-400 font-normal">(today or later)</span>
+            </label>
+            <input type="date" min={today} value={formS.completionDate} onChange={setS('completionDate')}
+              className="w-full text-sm bg-white/60 border border-slate-200 rounded-xl px-3 py-2.5 outline-none focus:border-blue-400" />
           </div>
           <div>
-            <label className="text-xs font-semibold text-slate-600 block mb-1">Scheduled Date</label>
-            <input type="date" value={form.scheduledDate} onChange={set('scheduledDate')}
-              className="w-full text-sm bg-white/60 border border-slate-200 rounded-xl px-3 py-2.5 outline-none focus:border-blue-400 transition-all" />
-          </div>
-          <div>
-            <label className="text-xs font-semibold text-slate-600 block mb-1">Notes</label>
-            <textarea value={form.notes} onChange={set('notes')} rows={2} placeholder="Optional notes…"
-              className="w-full text-sm bg-white/60 border border-slate-200 rounded-xl px-3 py-2.5 outline-none focus:border-blue-400 transition-all resize-none" />
+            <label className="text-xs font-semibold text-slate-600 block mb-1">Remarks</label>
+            <textarea value={formS.remarks} onChange={setS('remarks')} rows={2} placeholder="Optional remarks…"
+              className="w-full text-sm bg-white/60 border border-slate-200 rounded-xl px-3 py-2.5 outline-none focus:border-blue-400 resize-none" />
           </div>
           <div className="flex gap-2 justify-end pt-2">
-            <button className="btn-secondary text-xs" onClick={() => setShowCreate(false)}>Cancel</button>
-            <button className="btn-primary text-xs" onClick={handleCreate} disabled={saving}>
-              {saving ? <><Loader2 size={12} className="animate-spin" /> Creating…</> : 'Create Delivery'}
+            <button className="btn-secondary text-xs" onClick={() => { setShowCreateS(false); setFormS(EMPTY_SERVICE); }}>Cancel</button>
+            <button className="btn-primary text-xs" onClick={handleCreateService} disabled={saving}>
+              {saving ? <><Loader2 size={12} className="animate-spin" /> Creating…</> : 'Create Service'}
             </button>
           </div>
         </div>

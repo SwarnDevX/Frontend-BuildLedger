@@ -1,137 +1,484 @@
-import { useState, useEffect } from 'react';
-import { Plus, X, CheckCircle2, Circle, Clock, AlertTriangle, Loader2, RefreshCw } from 'lucide-react';
+import { useState, useEffect, useCallback } from 'react';
+import {
+  Plus, CheckCircle2, Circle, XCircle, Clock, Loader2, RefreshCw,
+  FileText, ChevronRight, AlertTriangle, Zap, Archive, Trash2, Edit3,
+  ClipboardList, ArrowRight, Shield,
+} from 'lucide-react';
 import Badge from '../../components/ui/Badge';
 import ProgressBar from '../../components/ui/ProgressBar';
 import Modal from '../../components/ui/Modal';
-import { getAllContracts, createContract, updateContractStatus } from '../../api/contracts';
+import {
+  getAllContracts, createContract, updateContract, deleteContract,
+  updateContractStatus, getContractTerms, addContractTerm,
+} from '../../api/contracts';
 import { getAllVendors } from '../../api/vendors';
 import { getAllProjects } from '../../api/projects';
 import { useAuth } from '../../context/AuthContext';
 import toast from 'react-hot-toast';
 
-// NOTE: The following analytics are not available from the backend:
-//   - Contract progress percentage (field not in response) — derived from status
-//   - Compliance flag per contract — no dedicated field returned by GET /contracts
-//   Future endpoint needed: GET /contracts/{id}/compliance-summary
+// Backend statuses: DRAFT → ACTIVE → COMPLETED | TERMINATED | EXPIRED
+function statusMeta(status) {
+  return {
+    DRAFT:      { label: 'Draft',      color: '#F59E0B', bg: 'rgba(245,158,11,0.12)',  idx: 0, progress: 5   },
+    ACTIVE:     { label: 'Active',     color: '#22C55E', bg: 'rgba(34,197,94,0.12)',   idx: 1, progress: 55  },
+    COMPLETED:  { label: 'Completed',  color: '#2563EB', bg: 'rgba(37,99,235,0.12)',   idx: 2, progress: 100 },
+    TERMINATED: { label: 'Terminated', color: '#EF4444', bg: 'rgba(239,68,68,0.12)',   idx: 2, progress: 100 },
+    EXPIRED:    { label: 'Expired',    color: '#94a3b8', bg: 'rgba(148,163,184,0.12)', idx: 2, progress: 100 },
+  }[status] ?? { label: status, color: '#94a3b8', bg: 'rgba(148,163,184,0.1)', idx: 0, progress: 10 };
+}
 
-const CONTRACT_TYPES = ['FIXED_PRICE', 'LUMP_SUM', 'UNIT_PRICE', 'COST_PLUS'];
-
-function statusToProgress(status) {
-  const map = { DRAFT: 5, ACTIVE: 55, COMPLETED: 100, TERMINATED: 100, ON_HOLD: 40 };
-  return map[status] || 10;
+// Timeline stages that match actual backend lifecycle
+const TIMELINE_STAGES = ['Draft', 'Active', 'Closed'];
+function stageIndex(status) {
+  if (status === 'DRAFT')      return 0;
+  if (status === 'ACTIVE')     return 1;
+  return 2; // COMPLETED, TERMINATED, EXPIRED
 }
 
 function ContractTimeline({ status }) {
-  const stages = ['Draft', 'Active', 'Review', 'Completed'];
-  const idxMap = { DRAFT: 0, ACTIVE: 1, ON_HOLD: 1, TERMINATED: 2, COMPLETED: 3 };
-  const activeIdx = idxMap[status] ?? 0;
+  const activeIdx = stageIndex(status);
+  const isTerminated = status === 'TERMINATED';
+  const isExpired    = status === 'EXPIRED';
+  const isCompleted  = status === 'COMPLETED';
+  const closeLabel   = isTerminated ? 'Terminated' : isExpired ? 'Expired' : isCompleted ? 'Completed' : 'Closed';
+
   return (
-    <div className="flex items-center gap-0">
-      {stages.map((s, i) => (
-        <div key={s} className="flex items-center">
-          <div className="flex flex-col items-center gap-1">
-            <div className={`w-6 h-6 rounded-full flex items-center justify-center text-white transition-all ${i <= activeIdx ? 'bg-blue-600' : 'bg-slate-200'}`}>
-              {i < activeIdx ? <CheckCircle2 size={12} /> : i === activeIdx ? <Circle size={12} fill="white" /> : <div className="w-2 h-2 rounded-full bg-white/60" />}
+    <div className="flex items-center gap-0 py-2">
+      {TIMELINE_STAGES.map((s, i) => {
+        const label = i === 2 ? closeLabel : s;
+        const done  = i < activeIdx;
+        const curr  = i === activeIdx;
+        let dotColor = 'bg-slate-200';
+        if (done) dotColor = 'bg-blue-600';
+        if (curr) {
+          if (isTerminated) dotColor = 'bg-red-500';
+          else if (isExpired) dotColor = 'bg-slate-400';
+          else dotColor = 'bg-blue-600';
+        }
+        let textColor = 'text-slate-400';
+        if (curr) {
+          if (isTerminated) textColor = 'text-red-500';
+          else if (isExpired) textColor = 'text-slate-500';
+          else textColor = 'text-blue-600';
+        }
+        if (done) textColor = 'text-blue-500';
+
+        return (
+          <div key={s} className="flex items-center">
+            <div className="flex flex-col items-center gap-1.5">
+              <div className={`w-7 h-7 rounded-full flex items-center justify-center text-white transition-all ${dotColor} shadow-sm`}>
+                {done ? <CheckCircle2 size={13} /> : curr && (isTerminated || isExpired)
+                  ? <XCircle size={13} />
+                  : <Circle size={11} fill="white" />}
+              </div>
+              <span className={`text-[10px] font-semibold whitespace-nowrap ${textColor}`}>{label}</span>
             </div>
-            <span className="text-[9px] text-slate-400 whitespace-nowrap">{s}</span>
+            {i < TIMELINE_STAGES.length - 1 && (
+              <div className={`h-0.5 w-14 mb-5 mx-1 transition-all ${done ? 'bg-blue-500' : 'bg-slate-200'}`} />
+            )}
           </div>
-          {i < stages.length - 1 && (
-            <div className={`h-0.5 w-12 mb-4 transition-all ${i < activeIdx ? 'bg-blue-600' : 'bg-slate-200'}`} />
-          )}
-        </div>
-      ))}
+        );
+      })}
     </div>
   );
 }
 
-function ContractDetailModal({ contract, onClose }) {
+// Status action buttons — what transitions are allowed from current status
+function LifecycleActions({ contract, onStatusChange, canManage }) {
+  const [loading, setLoading] = useState(null);
+
+  if (!canManage) return null;
+
+  const actions = [];
+  if (contract.status === 'DRAFT') {
+    actions.push({ label: 'Activate Contract', status: 'ACTIVE', color: '#22C55E', icon: Zap });
+    actions.push({ label: 'Delete Draft', status: '__DELETE__', color: '#EF4444', icon: Trash2 });
+  } else if (contract.status === 'ACTIVE') {
+    actions.push({ label: 'Mark Completed', status: 'COMPLETED',  color: '#2563EB',  icon: CheckCircle2 });
+    actions.push({ label: 'Terminate',      status: 'TERMINATED', color: '#EF4444',  icon: XCircle      });
+    actions.push({ label: 'Mark Expired',   status: 'EXPIRED',    color: '#94a3b8',  icon: Archive      });
+  }
+
+  if (actions.length === 0) return (
+    <p className="text-xs text-slate-400 italic">This contract is in a terminal state — no further transitions available.</p>
+  );
+
+  const handle = async (action) => {
+    setLoading(action.status);
+    try {
+      await onStatusChange(action.status);
+    } finally {
+      setLoading(null);
+    }
+  };
+
+  return (
+    <div className="flex flex-wrap gap-2">
+      {actions.map((a) => {
+        const Icon = a.icon;
+        return (
+          <button
+            key={a.status}
+            onClick={() => handle(a)}
+            disabled={!!loading}
+            className="flex items-center gap-1.5 px-3 py-2 rounded-xl text-xs font-semibold text-white transition-all disabled:opacity-50"
+            style={{ background: a.color, boxShadow: `0 2px 8px ${a.color}55` }}
+          >
+            {loading === a.status
+              ? <Loader2 size={12} className="animate-spin" />
+              : <Icon size={12} />
+            }
+            {a.label}
+          </button>
+        );
+      })}
+    </div>
+  );
+}
+
+function ContractTermsTab({ contractId, isDraft, canManage }) {
+  const [terms, setTerms]       = useState([]);
+  const [loading, setLoading]   = useState(true);
+  const [newTerm, setNewTerm]   = useState('');
+  const [flag, setFlag]         = useState(false);
+  const [adding, setAdding]     = useState(false);
+
+  const loadTerms = useCallback(async () => {
+    setLoading(true);
+    try {
+      const res = await getContractTerms(contractId);
+      setTerms(res.data?.data || []);
+    } catch { setTerms([]); }
+    finally { setLoading(false); }
+  }, [contractId]);
+
+  useEffect(() => { loadTerms(); }, [loadTerms]);
+
+  const handleAdd = async () => {
+    if (!newTerm.trim()) return;
+    setAdding(true);
+    try {
+      await addContractTerm(contractId, { description: newTerm, complianceFlag: flag });
+      setNewTerm('');
+      setFlag(false);
+      toast.success('Term added');
+      loadTerms();
+    } catch (err) {
+      toast.error(err.response?.data?.message || 'Failed to add term');
+    } finally { setAdding(false); }
+  };
+
+  if (loading) return <div className="flex justify-center py-6"><Loader2 size={18} className="animate-spin text-blue-500" /></div>;
+
+  return (
+    <div className="space-y-3">
+      {terms.length === 0
+        ? <p className="text-sm text-slate-400 text-center py-4">No contract terms yet.</p>
+        : terms.map((t, i) => (
+          <div key={t.termId} className="flex items-start gap-3 p-3 rounded-xl"
+            style={{ background: 'rgba(37,99,235,0.05)', border: '1px solid rgba(37,99,235,0.1)' }}>
+            <span className="w-5 h-5 rounded-full bg-blue-100 text-blue-600 text-[10px] font-bold flex items-center justify-center shrink-0 mt-0.5">
+              {i + 1}
+            </span>
+            <div className="flex-1">
+              <p className="text-sm text-slate-700">{t.description}</p>
+              {t.complianceFlag && (
+                <span className="inline-flex items-center gap-1 mt-1 text-[10px] font-semibold text-amber-600 bg-amber-50 px-2 py-0.5 rounded-full">
+                  <Shield size={9} /> Compliance Required
+                </span>
+              )}
+            </div>
+          </div>
+        ))
+      }
+
+      {canManage && isDraft && (
+        <div className="pt-2 space-y-2">
+          <textarea
+            value={newTerm}
+            onChange={e => setNewTerm(e.target.value)}
+            placeholder="Add a new contract term…"
+            rows={2}
+            className="w-full text-sm bg-white/60 border border-slate-200 rounded-xl px-3 py-2 outline-none focus:border-blue-400 transition-all resize-none"
+          />
+          <div className="flex items-center justify-between">
+            <label className="flex items-center gap-2 text-xs text-slate-500 cursor-pointer">
+              <input type="checkbox" checked={flag} onChange={e => setFlag(e.target.checked)} className="accent-amber-500" />
+              Mark as compliance-required
+            </label>
+            <button onClick={handleAdd} disabled={adding || !newTerm.trim()} className="btn-primary text-xs">
+              {adding ? <><Loader2 size={11} className="animate-spin" /> Adding…</> : 'Add Term'}
+            </button>
+          </div>
+        </div>
+      )}
+    </div>
+  );
+}
+
+function ContractDetailModal({ contract, vendors, projects, onClose, onRefresh, canManage }) {
+  const [tab, setTab]    = useState('details');
+  const [editing, setEditing] = useState(false);
+  const [editForm, setEditForm] = useState({});
+  const [saving, setSaving] = useState(false);
+
   if (!contract) return null;
-  const progress = statusToProgress(contract.status);
+
+  const meta     = statusMeta(contract.status);
+  const progress = meta.progress;
+  const isDraft  = contract.status === 'DRAFT';
+
+  const openEdit = () => {
+    setEditForm({
+      vendorId:    contract.vendorId || '',
+      projectId:   contract.projectId || '',
+      startDate:   contract.startDate || '',
+      endDate:     contract.endDate || '',
+      value:       contract.value || '',
+      description: contract.description || '',
+    });
+    setEditing(true);
+  };
+
+  const handleSave = async () => {
+    if (!editForm.vendorId || !editForm.projectId || !editForm.startDate || !editForm.endDate || !editForm.value) {
+      toast.error('All required fields must be filled');
+      return;
+    }
+    setSaving(true);
+    try {
+      await updateContract(contract.contractId, {
+        vendorId:    Number(editForm.vendorId),
+        projectId:   Number(editForm.projectId),
+        startDate:   editForm.startDate,
+        endDate:     editForm.endDate,
+        value:       Number(editForm.value),
+        description: editForm.description || undefined,
+      });
+      toast.success('Contract updated');
+      setEditing(false);
+      onRefresh();
+    } catch (err) {
+      toast.error(err.response?.data?.message || 'Failed to update');
+    } finally { setSaving(false); }
+  };
+
+  const handleStatusChange = async (newStatus) => {
+    if (newStatus === '__DELETE__') {
+      if (!window.confirm('Delete this DRAFT contract? This cannot be undone.')) return;
+      try {
+        await deleteContract(contract.contractId);
+        toast.success('Contract deleted');
+        onClose();
+        onRefresh();
+      } catch (err) {
+        toast.error(err.response?.data?.message || 'Failed to delete');
+      }
+      return;
+    }
+    try {
+      await updateContractStatus(contract.contractId, newStatus);
+      toast.success(`Contract moved to ${newStatus}`);
+      onRefresh();
+      onClose();
+    } catch (err) {
+      toast.error(err.response?.data?.message || 'Status transition failed');
+    }
+  };
+
+  const setF = (k) => (e) => setEditForm((p) => ({ ...p, [k]: e.target.value }));
+  const activeVendors  = vendors.filter(v => v.status === 'ACTIVE');
+
   return (
     <Modal open={!!contract} onClose={onClose} title={`Contract #${contract.contractId}`} wide>
       <div className="space-y-5">
-        <div className="grid grid-cols-2 gap-4">
-          {[
-            ['Title', contract.title || contract.name || '—'],
-            ['Vendor ID', contract.vendorId || '—'],
-            ['Project ID', contract.projectId || '—'],
-            ['Contract Type', contract.contractType || contract.type || '—'],
-            ['Contract Value', contract.value || contract.contractValue ? `$${(contract.value || contract.contractValue).toLocaleString()}` : '—'],
-            ['Start Date', contract.startDate || '—'],
-            ['End Date', contract.endDate || '—'],
-            ['Status', contract.status || '—'],
-          ].map(([k, v]) => (
-            <div key={k}>
-              <p className="text-xs text-slate-400 mb-0.5">{k}</p>
-              <p className="text-sm font-semibold text-slate-800">{v}</p>
+        {/* Status badge + progress */}
+        <div className="flex items-center justify-between flex-wrap gap-3">
+          <span className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-full text-xs font-semibold"
+            style={{ background: meta.bg, color: meta.color, border: `1px solid ${meta.color}44` }}>
+            <span className="w-1.5 h-1.5 rounded-full" style={{ background: meta.color }} />
+            {meta.label}
+          </span>
+          <div className="flex-1 min-w-[140px]">
+            <div className="flex justify-between text-[10px] text-slate-400 mb-1">
+              <span>Progress</span><span className="font-semibold">{progress}%</span>
             </div>
-          ))}
+            <ProgressBar value={progress} />
+          </div>
         </div>
+
+        {/* Timeline */}
         <div>
-          <p className="text-xs text-slate-400 mb-2">Progress</p>
-          <ProgressBar value={progress} showLabel />
-        </div>
-        <div>
-          <p className="text-xs text-slate-400 mb-2">Timeline</p>
+          <p className="text-xs text-slate-400 mb-2 font-semibold uppercase tracking-wide">Lifecycle</p>
           <ContractTimeline status={contract.status} />
         </div>
-        {contract.description && (
-          <div className="glass p-4 rounded-xl">
-            <p className="text-xs text-slate-500 leading-relaxed">{contract.description}</p>
+
+        {/* Tabs */}
+        <div className="flex gap-1 border-b border-slate-100">
+          {['details', 'terms', 'actions'].map(t => (
+            <button key={t} onClick={() => setTab(t)}
+              className={`px-4 py-2 text-xs font-semibold capitalize transition-all rounded-t-lg ${tab === t ? 'bg-blue-600 text-white' : 'text-slate-500 hover:text-slate-700'}`}>
+              {t === 'terms' ? 'Contract Terms' : t === 'actions' ? 'Lifecycle Actions' : 'Details'}
+            </button>
+          ))}
+        </div>
+
+        {/* Details tab */}
+        {tab === 'details' && (
+          <div className="space-y-4">
+            {!editing ? (
+              <>
+                <div className="grid grid-cols-2 gap-4">
+                  {[
+                    ['Vendor',    contract.vendorName || `Vendor #${contract.vendorId}`],
+                    ['Project',   contract.projectName || `Project #${contract.projectId}`],
+                    ['Value',     contract.value ? `$${Number(contract.value).toLocaleString()}` : '—'],
+                    ['Start Date', contract.startDate || '—'],
+                    ['End Date',   contract.endDate   || '—'],
+                    ['Created',    contract.createdAt ? new Date(contract.createdAt).toLocaleDateString() : '—'],
+                  ].map(([k, v]) => (
+                    <div key={k}>
+                      <p className="text-[10px] text-slate-400 font-semibold uppercase tracking-wide mb-0.5">{k}</p>
+                      <p className="text-sm font-medium text-slate-800">{v}</p>
+                    </div>
+                  ))}
+                </div>
+                {contract.description && (
+                  <div className="p-3 rounded-xl" style={{ background: 'rgba(37,99,235,0.05)', border: '1px solid rgba(37,99,235,0.1)' }}>
+                    <p className="text-xs text-slate-500 font-semibold uppercase tracking-wide mb-1">Description</p>
+                    <p className="text-sm text-slate-600 leading-relaxed">{contract.description}</p>
+                  </div>
+                )}
+                <div className="flex gap-2 justify-end">
+                  {canManage && isDraft && (
+                    <button className="btn-secondary text-xs" onClick={openEdit}><Edit3 size={12} /> Edit</button>
+                  )}
+                  <button className="btn-secondary text-xs" onClick={onClose}>Close</button>
+                </div>
+              </>
+            ) : (
+              <div className="space-y-3">
+                <div className="grid grid-cols-2 gap-3">
+                  <div>
+                    <label className="text-xs font-semibold text-slate-600 block mb-1">Vendor *</label>
+                    <select value={editForm.vendorId} onChange={setF('vendorId')}
+                      className="w-full text-sm bg-white/60 border border-slate-200 rounded-xl px-3 py-2 outline-none focus:border-blue-400">
+                      <option value="">Select vendor…</option>
+                      {activeVendors.map(v => <option key={v.vendorId} value={v.vendorId}>{v.name}</option>)}
+                    </select>
+                  </div>
+                  <div>
+                    <label className="text-xs font-semibold text-slate-600 block mb-1">Project *</label>
+                    <select value={editForm.projectId} onChange={setF('projectId')}
+                      className="w-full text-sm bg-white/60 border border-slate-200 rounded-xl px-3 py-2 outline-none focus:border-blue-400">
+                      <option value="">Select project…</option>
+                      {projects.map(p => <option key={p.projectId} value={p.projectId}>{p.name}</option>)}
+                    </select>
+                  </div>
+                  <div>
+                    <label className="text-xs font-semibold text-slate-600 block mb-1">Start Date *</label>
+                    <input type="date" value={editForm.startDate} onChange={setF('startDate')}
+                      className="w-full text-sm bg-white/60 border border-slate-200 rounded-xl px-3 py-2 outline-none focus:border-blue-400" />
+                  </div>
+                  <div>
+                    <label className="text-xs font-semibold text-slate-600 block mb-1">End Date *</label>
+                    <input type="date" value={editForm.endDate} onChange={setF('endDate')}
+                      className="w-full text-sm bg-white/60 border border-slate-200 rounded-xl px-3 py-2 outline-none focus:border-blue-400" />
+                  </div>
+                </div>
+                <div>
+                  <label className="text-xs font-semibold text-slate-600 block mb-1">Contract Value ($) *</label>
+                  <input type="number" value={editForm.value} onChange={setF('value')} placeholder="0.00"
+                    className="w-full text-sm bg-white/60 border border-slate-200 rounded-xl px-3 py-2 outline-none focus:border-blue-400" />
+                </div>
+                <div>
+                  <label className="text-xs font-semibold text-slate-600 block mb-1">Description</label>
+                  <textarea value={editForm.description} onChange={setF('description')} rows={3}
+                    className="w-full text-sm bg-white/60 border border-slate-200 rounded-xl px-3 py-2 outline-none focus:border-blue-400 resize-none" />
+                </div>
+                <div className="flex gap-2 justify-end">
+                  <button className="btn-secondary text-xs" onClick={() => setEditing(false)}>Cancel</button>
+                  <button className="btn-primary text-xs" onClick={handleSave} disabled={saving}>
+                    {saving ? <><Loader2 size={11} className="animate-spin" /> Saving…</> : 'Save Changes'}
+                  </button>
+                </div>
+              </div>
+            )}
           </div>
         )}
-        <div className="flex gap-2 justify-end">
-          <button className="btn-secondary text-xs" onClick={onClose}>Close</button>
-        </div>
+
+        {/* Terms tab */}
+        {tab === 'terms' && (
+          <ContractTermsTab contractId={contract.contractId} isDraft={isDraft} canManage={canManage} />
+        )}
+
+        {/* Lifecycle Actions tab */}
+        {tab === 'actions' && (
+          <div className="space-y-4">
+            <div className="p-3 rounded-xl text-sm"
+              style={{ background: 'rgba(37,99,235,0.05)', border: '1px solid rgba(37,99,235,0.1)' }}>
+              <p className="text-xs text-slate-500 font-semibold mb-1 uppercase tracking-wide">Allowed Transitions</p>
+              <p className="text-xs text-slate-600 leading-relaxed">
+                {contract.status === 'DRAFT'     && 'DRAFT → ACTIVE (activate), or delete this draft.'}
+                {contract.status === 'ACTIVE'    && 'ACTIVE → COMPLETED, TERMINATED, or EXPIRED.'}
+                {['COMPLETED','TERMINATED','EXPIRED'].includes(contract.status) && 'This contract is in a terminal state.'}
+              </p>
+            </div>
+            <LifecycleActions contract={contract} onStatusChange={handleStatusChange} canManage={canManage} />
+          </div>
+        )}
       </div>
     </Modal>
   );
 }
 
-const EMPTY_FORM = { title: '', vendorId: '', projectId: '', contractType: 'FIXED_PRICE', value: '', startDate: '', endDate: '', description: '' };
+const EMPTY_FORM = {
+  vendorId: '', projectId: '', startDate: '', endDate: '', value: '', description: '',
+};
 
 export default function ContractManagement() {
-  const { user } = useAuth();
-  const [contracts, setContracts]   = useState([]);
-  const [vendors, setVendors]       = useState([]);
-  const [projects, setProjects]     = useState([]);
-  const [loading, setLoading]       = useState(true);
-  const [selected, setSelected]     = useState(null);
-  const [showCreate, setShowCreate] = useState(false);
-  const [form, setForm]             = useState(EMPTY_FORM);
-  const [saving, setSaving]         = useState(false);
+  const { user }                     = useAuth();
+  const [contracts, setContracts]    = useState([]);
+  const [vendors, setVendors]        = useState([]);
+  const [projects, setProjects]      = useState([]);
+  const [loading, setLoading]        = useState(true);
+  const [selected, setSelected]      = useState(null);
+  const [showCreate, setShowCreate]  = useState(false);
+  const [form, setForm]              = useState(EMPTY_FORM);
+  const [saving, setSaving]          = useState(false);
+  const [filterStatus, setFilterStatus] = useState('ALL');
 
-  const canCreate = ['ADMIN', 'PROJECT_MANAGER'].includes(user?.role);
+  const canManage = ['ADMIN', 'PROJECT_MANAGER'].includes(user?.role);
 
-  const fetchData = async () => {
+  const fetchData = useCallback(async () => {
     setLoading(true);
     try {
       const [c, v, p] = await Promise.allSettled([getAllContracts(), getAllVendors(), getAllProjects()]);
-      setContracts(c.status === 'fulfilled' ? (c.value.data?.data || []) : []);
-      setVendors(v.status === 'fulfilled' ? (v.value.data?.data || []) : []);
-      setProjects(p.status === 'fulfilled' ? (p.value.data?.data || []) : []);
-    } catch { toast.error('Failed to load contracts'); }
+      setContracts(c.status === 'fulfilled' ? (c.value.data?.data ?? []) : []);
+      setVendors(v.status === 'fulfilled'   ? (v.value.data?.data ?? []) : []);
+      setProjects(p.status === 'fulfilled'  ? (p.value.data?.data ?? []) : []);
+    } catch { toast.error('Failed to load data'); }
     finally { setLoading(false); }
-  };
+  }, []);
 
-  useEffect(() => { fetchData(); }, []);
+  useEffect(() => { fetchData(); }, [fetchData]);
 
   const handleCreate = async () => {
-    if (!form.title || !form.vendorId) { toast.error('Title and Vendor are required'); return; }
+    if (!form.vendorId || !form.projectId || !form.startDate || !form.endDate || !form.value) {
+      toast.error('All required fields must be filled');
+      return;
+    }
     setSaving(true);
     try {
       await createContract({
-        title: form.title,
-        vendorId: Number(form.vendorId),
-        projectId: form.projectId ? Number(form.projectId) : undefined,
-        contractType: form.contractType,
-        value: form.value ? Number(form.value) : undefined,
-        startDate: form.startDate || undefined,
-        endDate: form.endDate || undefined,
+        vendorId:    Number(form.vendorId),
+        projectId:   Number(form.projectId),
+        startDate:   form.startDate,
+        endDate:     form.endDate,
+        value:       Number(form.value),
         description: form.description || undefined,
-        status: 'DRAFT',
       });
-      toast.success('Contract created successfully');
+      toast.success('Contract created in DRAFT status');
       setShowCreate(false);
       setForm(EMPTY_FORM);
       fetchData();
@@ -140,103 +487,122 @@ export default function ContractManagement() {
     } finally { setSaving(false); }
   };
 
-  const set = k => e => setForm(p => ({ ...p, [k]: e.target.value }));
+  const set = (k) => (e) => setForm((p) => ({ ...p, [k]: e.target.value }));
 
-  // Summary counts
-  const statusCounts = { ACTIVE: 0, DRAFT: 0, ON_HOLD: 0, COMPLETED: 0 };
-  contracts.forEach(c => { if (statusCounts[c.status] !== undefined) statusCounts[c.status]++; });
+  // Summary counts by status
+  const counts = { ALL: contracts.length, DRAFT: 0, ACTIVE: 0, COMPLETED: 0, TERMINATED: 0, EXPIRED: 0 };
+  contracts.forEach(c => { if (counts[c.status] !== undefined) counts[c.status]++; });
+
+  const displayed = filterStatus === 'ALL' ? contracts : contracts.filter(c => c.status === filterStatus);
+  const activeVendors = vendors.filter(v => v.status === 'ACTIVE');
 
   if (loading) return (
     <div className="flex items-center justify-center h-64 gap-2 text-slate-400">
-      <Loader2 size={20} className="animate-spin text-blue-500" /><span className="text-sm">Loading contracts…</span>
+      <Loader2 size={20} className="animate-spin text-blue-500" />
+      <span className="text-sm">Loading contracts…</span>
     </div>
   );
 
   return (
     <div className="animate-fadeIn space-y-5">
       {/* Header */}
-      <div className="flex items-center justify-between">
+      <div className="flex items-center justify-between flex-wrap gap-3">
         <div>
           <h2 className="text-xl font-bold text-slate-800">Contract Management</h2>
-          <p className="text-sm text-slate-400">{contracts.length} contracts total</p>
+          <p className="text-sm text-slate-400">{contracts.length} contracts · Lifecycle: DRAFT → ACTIVE → CLOSED</p>
         </div>
         <div className="flex gap-2">
           <button onClick={fetchData} className="btn-secondary text-xs"><RefreshCw size={13} /> Refresh</button>
-          {canCreate && (
+          {canManage && (
             <button className="btn-primary text-xs" onClick={() => setShowCreate(true)}>
-              <Plus size={14} /> Create New Contract
+              <Plus size={14} /> New Contract
             </button>
           )}
         </div>
       </div>
 
-      {/* Summary bars */}
-      <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
+      {/* Status filter cards */}
+      <div className="grid grid-cols-3 sm:grid-cols-6 gap-2">
         {[
-          { label: 'Active', count: statusCounts.ACTIVE, color: '#22C55E' },
-          { label: 'Draft', count: statusCounts.DRAFT, color: '#F59E0B' },
-          { label: 'On Hold', count: statusCounts.ON_HOLD, color: '#94a3b8' },
-          { label: 'Completed', count: statusCounts.COMPLETED, color: '#2563EB' },
+          { key: 'ALL',        label: 'All',        color: '#64748b' },
+          { key: 'DRAFT',      label: 'Draft',      color: '#F59E0B' },
+          { key: 'ACTIVE',     label: 'Active',     color: '#22C55E' },
+          { key: 'COMPLETED',  label: 'Completed',  color: '#2563EB' },
+          { key: 'TERMINATED', label: 'Terminated', color: '#EF4444' },
+          { key: 'EXPIRED',    label: 'Expired',    color: '#94a3b8' },
         ].map(s => (
-          <div key={s.label} className="glass-card p-4 text-center">
-            <p className="text-2xl font-bold" style={{ color: s.color }}>{s.count}</p>
-            <p className="text-xs text-slate-400 font-medium">{s.label}</p>
-          </div>
+          <button key={s.key} onClick={() => setFilterStatus(s.key)}
+            className="glass-card p-3 text-center transition-all"
+            style={filterStatus === s.key ? { borderColor: s.color, borderWidth: 2, transform: 'translateY(-2px)' } : {}}>
+            <p className="text-xl font-bold" style={{ color: s.color }}>{counts[s.key] ?? 0}</p>
+            <p className="text-[10px] text-slate-400 font-medium">{s.label}</p>
+          </button>
         ))}
       </div>
 
-      {/* Contract Cards */}
-      {contracts.length === 0 ? (
-        <div className="glass-card p-10 text-center text-slate-400 text-sm">No contracts found</div>
+      {/* Contract Grid */}
+      {displayed.length === 0 ? (
+        <div className="glass-card p-10 text-center text-slate-400 text-sm">
+          {filterStatus === 'ALL' ? 'No contracts found.' : `No ${filterStatus.toLowerCase()} contracts.`}
+        </div>
       ) : (
         <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-4">
-          {contracts.map(c => {
-            const progress = statusToProgress(c.status);
-            const vendor = vendors.find(v => v.vendorId === c.vendorId);
-            const project = projects.find(p => p.projectId === c.projectId);
+          {displayed.map(c => {
+            const meta = statusMeta(c.status);
             return (
-              <div key={c.contractId} className="glass-card p-5 cursor-pointer hover:shadow-md transition-all" onClick={() => setSelected(c)}>
+              <div key={c.contractId}
+                className="glass-card p-5 cursor-pointer hover:shadow-md transition-all"
+                onClick={() => setSelected(c)}>
+                {/* Card header */}
                 <div className="flex items-start justify-between mb-3">
-                  <div>
-                    <p className="text-xs font-mono text-blue-600 font-semibold">#{c.contractId}</p>
-                    <h3 className="text-sm font-semibold text-slate-800 mt-0.5">{c.title || c.name || 'Untitled Contract'}</h3>
+                  <div className="flex-1 min-w-0 pr-2">
+                    <p className="text-xs font-mono text-blue-600 font-semibold mb-0.5">#{c.contractId}</p>
+                    <h3 className="text-sm font-semibold text-slate-800 truncate">
+                      {c.vendorName || `Vendor #${c.vendorId}`}
+                    </h3>
+                    <p className="text-xs text-slate-400 truncate">{c.projectName || `Project #${c.projectId}`}</p>
                   </div>
-                  <Badge status={c.status} />
+                  <span className="shrink-0 inline-flex items-center gap-1 px-2 py-1 rounded-full text-[10px] font-semibold"
+                    style={{ background: meta.bg, color: meta.color }}>
+                    <span className="w-1.5 h-1.5 rounded-full" style={{ background: meta.color }} />
+                    {meta.label}
+                  </span>
                 </div>
-                <div className="space-y-2 mb-4">
-                  <div className="flex justify-between text-xs">
-                    <span className="text-slate-400">Vendor</span>
-                    <span className="text-slate-700 font-medium">{vendor?.name || `#${c.vendorId}` || '—'}</span>
-                  </div>
-                  {c.value || c.contractValue ? (
+
+                {/* Key info */}
+                <div className="space-y-1.5 mb-4">
+                  {c.value && (
                     <div className="flex justify-between text-xs">
-                      <span className="text-slate-400">Value</span>
-                      <span className="text-slate-700 font-semibold">${(c.value || c.contractValue).toLocaleString()}</span>
-                    </div>
-                  ) : null}
-                  <div className="flex justify-between text-xs">
-                    <span className="text-slate-400">Type</span>
-                    <span className="text-slate-500">{c.contractType || c.type || '—'}</span>
-                  </div>
-                  {project && (
-                    <div className="flex justify-between text-xs">
-                      <span className="text-slate-400">Project</span>
-                      <span className="text-slate-500 truncate max-w-[120px]">{project.name || `#${c.projectId}`}</span>
+                      <span className="text-slate-400">Contract Value</span>
+                      <span className="text-slate-700 font-semibold">${Number(c.value).toLocaleString()}</span>
                     </div>
                   )}
+                  <div className="flex justify-between text-xs">
+                    <span className="text-slate-400">Duration</span>
+                    <span className="text-slate-500">{c.startDate || '—'} → {c.endDate || '—'}</span>
+                  </div>
                 </div>
+
+                {/* Progress */}
                 <div className="mb-3">
                   <div className="flex justify-between text-xs mb-1">
                     <span className="text-slate-400">Progress</span>
-                    <span className="text-slate-600 font-semibold">{progress}%</span>
+                    <span className="text-slate-600 font-semibold">{meta.progress}%</span>
                   </div>
-                  <ProgressBar value={progress} />
+                  <ProgressBar value={meta.progress} />
                 </div>
+
+                {/* Quick lifecycle state */}
                 <div className="flex items-center justify-between">
                   <div className="flex items-center gap-1 text-[10px] text-slate-400">
-                    <Clock size={10} />
-                    <span>{c.startDate || '—'} → {c.endDate || '—'}</span>
+                    <ClipboardList size={10} />
+                    <span>Click to view lifecycle & terms</span>
                   </div>
+                  {canManage && (c.status === 'DRAFT' || c.status === 'ACTIVE') && (
+                    <span className="text-[10px] text-blue-500 font-medium flex items-center gap-0.5">
+                      Manage <ChevronRight size={10} />
+                    </span>
+                  )}
                 </div>
               </div>
             );
@@ -244,28 +610,41 @@ export default function ContractManagement() {
         </div>
       )}
 
-      <ContractDetailModal contract={selected} onClose={() => setSelected(null)} />
+      {/* Contract Detail Modal */}
+      <ContractDetailModal
+        contract={selected}
+        vendors={vendors}
+        projects={projects}
+        onClose={() => setSelected(null)}
+        onRefresh={fetchData}
+        canManage={canManage}
+      />
 
       {/* Create Contract Modal */}
-      <Modal open={showCreate} onClose={() => setShowCreate(false)} title="Create New Contract">
+      <Modal open={showCreate} onClose={() => { setShowCreate(false); setForm(EMPTY_FORM); }} title="Create New Contract">
         <div className="space-y-4">
-          <div>
-            <label className="text-xs font-semibold text-slate-600 block mb-1">Title *</label>
-            <input value={form.title} onChange={set('title')} placeholder="Contract title"
-              className="w-full text-sm bg-white/60 border border-slate-200 rounded-xl px-3 py-2.5 outline-none focus:border-blue-400 transition-all" />
+          <div className="p-3 rounded-xl text-xs text-slate-500 flex items-center gap-2"
+            style={{ background: 'rgba(37,99,235,0.06)', border: '1px solid rgba(37,99,235,0.12)' }}>
+            <AlertTriangle size={13} className="text-blue-400 shrink-0" />
+            New contracts are created in <strong className="text-blue-600">DRAFT</strong> status. Activate them from the detail view.
           </div>
+
           <div>
-            <label className="text-xs font-semibold text-slate-600 block mb-1">Vendor *</label>
+            <label className="text-xs font-semibold text-slate-600 block mb-1">Vendor * <span className="text-slate-400 font-normal">(must be ACTIVE)</span></label>
             <select value={form.vendorId} onChange={set('vendorId')}
               className="w-full text-sm bg-white/60 border border-slate-200 rounded-xl px-3 py-2.5 outline-none focus:border-blue-400 transition-all">
               <option value="">Select vendor…</option>
-              {vendors.filter(v => v.status === 'ACTIVE').map(v => (
+              {activeVendors.map(v => (
                 <option key={v.vendorId} value={v.vendorId}>{v.name} (#{v.vendorId})</option>
               ))}
             </select>
+            {activeVendors.length === 0 && (
+              <p className="text-xs text-amber-500 mt-1">No active vendors. Approve a vendor first.</p>
+            )}
           </div>
+
           <div>
-            <label className="text-xs font-semibold text-slate-600 block mb-1">Project</label>
+            <label className="text-xs font-semibold text-slate-600 block mb-1">Project *</label>
             <select value={form.projectId} onChange={set('projectId')}
               className="w-full text-sm bg-white/60 border border-slate-200 rounded-xl px-3 py-2.5 outline-none focus:border-blue-400 transition-all">
               <option value="">Select project…</option>
@@ -273,40 +652,40 @@ export default function ContractManagement() {
                 <option key={p.projectId} value={p.projectId}>{p.name || `Project #${p.projectId}`}</option>
               ))}
             </select>
+            {projects.length === 0 && (
+              <p className="text-xs text-amber-500 mt-1">No projects found. Create a project first.</p>
+            )}
           </div>
+
           <div>
-            <label className="text-xs font-semibold text-slate-600 block mb-1">Contract Type</label>
-            <select value={form.contractType} onChange={set('contractType')}
-              className="w-full text-sm bg-white/60 border border-slate-200 rounded-xl px-3 py-2.5 outline-none focus:border-blue-400 transition-all">
-              {CONTRACT_TYPES.map(t => <option key={t} value={t}>{t.replace(/_/g, ' ')}</option>)}
-            </select>
-          </div>
-          <div>
-            <label className="text-xs font-semibold text-slate-600 block mb-1">Contract Value ($)</label>
-            <input type="number" value={form.value} onChange={set('value')} placeholder="0.00"
+            <label className="text-xs font-semibold text-slate-600 block mb-1">Contract Value ($) *</label>
+            <input type="number" min="0.01" step="0.01" value={form.value} onChange={set('value')} placeholder="0.00"
               className="w-full text-sm bg-white/60 border border-slate-200 rounded-xl px-3 py-2.5 outline-none focus:border-blue-400 transition-all" />
           </div>
+
           <div className="grid grid-cols-2 gap-3">
             <div>
-              <label className="text-xs font-semibold text-slate-600 block mb-1">Start Date</label>
+              <label className="text-xs font-semibold text-slate-600 block mb-1">Start Date *</label>
               <input type="date" value={form.startDate} onChange={set('startDate')}
                 className="w-full text-sm bg-white/60 border border-slate-200 rounded-xl px-3 py-2.5 outline-none focus:border-blue-400 transition-all" />
             </div>
             <div>
-              <label className="text-xs font-semibold text-slate-600 block mb-1">End Date</label>
+              <label className="text-xs font-semibold text-slate-600 block mb-1">End Date *</label>
               <input type="date" value={form.endDate} onChange={set('endDate')}
                 className="w-full text-sm bg-white/60 border border-slate-200 rounded-xl px-3 py-2.5 outline-none focus:border-blue-400 transition-all" />
             </div>
           </div>
+
           <div>
             <label className="text-xs font-semibold text-slate-600 block mb-1">Description</label>
-            <textarea value={form.description} onChange={set('description')} rows={3} placeholder="Optional description…"
+            <textarea value={form.description} onChange={set('description')} rows={3} placeholder="Optional description of this contract…"
               className="w-full text-sm bg-white/60 border border-slate-200 rounded-xl px-3 py-2.5 outline-none focus:border-blue-400 transition-all resize-none" />
           </div>
-          <div className="flex gap-2 justify-end pt-2">
-            <button className="btn-secondary text-xs" onClick={() => setShowCreate(false)}>Cancel</button>
+
+          <div className="flex gap-2 justify-end pt-1">
+            <button className="btn-secondary text-xs" onClick={() => { setShowCreate(false); setForm(EMPTY_FORM); }}>Cancel</button>
             <button className="btn-primary text-xs" onClick={handleCreate} disabled={saving}>
-              {saving ? <><Loader2 size={12} className="animate-spin" /> Creating…</> : 'Create Contract'}
+              {saving ? <><Loader2 size={12} className="animate-spin" /> Creating…</> : <><FileText size={12} /> Create Contract</>}
             </button>
           </div>
         </div>

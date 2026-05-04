@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import { useState, useRef, useEffect } from 'react';
 import { useLocation, useNavigate } from 'react-router-dom';
 import { Bell, Search, ChevronDown, Moon, Sun, LogOut } from 'lucide-react';
 import { useAuth } from '../../context/AuthContext';
@@ -17,6 +17,15 @@ export default function Topbar({ sidebarWidth }) {
   const { user, logout } = useAuth();
   const [dark, setDark] = useState(false);
   const [showMenu, setShowMenu] = useState(false);
+  const menuRef = useRef(null);
+
+  useEffect(() => {
+    const handler = (e) => {
+      if (menuRef.current && !menuRef.current.contains(e.target)) setShowMenu(false);
+    };
+    document.addEventListener('mousedown', handler);
+    return () => document.removeEventListener('mousedown', handler);
+  }, []);
   const unread = notifications.filter(n => !n.read).length;
   const title  = pageTitles[location.pathname] || 'BuildLedger';
   const initials = (user?.name || user?.username || 'U').split(' ').map(w => w[0]).join('').slice(0, 2).toUpperCase();
@@ -48,7 +57,7 @@ export default function Topbar({ sidebarWidth }) {
         )}
       </button>
       {/* User menu */}
-      <div className="relative">
+      <div className="relative" ref={menuRef}>
         <button onClick={() => setShowMenu(!showMenu)} className="flex items-center gap-2 cursor-pointer group">
           <div className="w-8 h-8 rounded-full bg-gradient-to-br from-blue-500 to-teal-400 flex items-center justify-center text-white text-xs font-bold">{initials}</div>
           <div className="hidden sm:block text-left">

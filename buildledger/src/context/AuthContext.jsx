@@ -10,25 +10,51 @@ export function AuthProvider({ children }) {
   const [token, setToken]     = useState(() => localStorage.getItem('bl_token'));
   const [loading, setLoading] = useState(true);
 
-  // On mount, if we have a token, fetch /auth/me to validate & hydrate user
+  // On mount, validate token and hydrate user.
+  // Falls back to JWT claims if /auth/me is unreachable so a backend restart
+  // doesn't force a re-login while the token is still valid.
   useEffect(() => {
     const init = async () => {
       const stored = localStorage.getItem('bl_token');
       if (!stored) { setLoading(false); return; }
+
+      let decoded;
       try {
-        const decoded = jwtDecode(stored);
-        // Check expiry
-        if (decoded.exp * 1000 < Date.now()) {
-          clearAuth();
-          setLoading(false);
-          return;
-        }
-        // Fetch fresh user info
-        const res = await getMe();
-        const userData = res.data?.data || res.data;
-        setUser(userData);
+        decoded = jwtDecode(stored);
       } catch {
         clearAuth();
+        setLoading(false);
+        return;
+      }
+
+      if (decoded.exp * 1000 < Date.now()) {
+        clearAuth();
+        setLoading(false);
+        return;
+      }
+
+      // Try to get fresh profile; fall back to JWT claims on failure
+      try {
+        const res = await getMe();
+        const userData = res.data?.data || res.data;
+        if (userData?.role) {
+          setUser(userData);
+        } else {
+          throw new Error('Empty user data');
+        }
+      } catch {
+        const fallback = {
+          userId:   decoded.userId,
+          username: decoded.sub,
+          name:     decoded.name || decoded.sub,
+          role:     decoded.role,
+          email:    decoded.email || null,
+        };
+        if (fallback.role) {
+          setUser(fallback);
+        } else {
+          clearAuth();
+        }
       } finally {
         setLoading(false);
       }

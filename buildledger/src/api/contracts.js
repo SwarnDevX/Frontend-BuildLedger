@@ -5,7 +5,7 @@ export const getContractById       = (id)             => api.get(`/contracts/${i
 export const createContract        = (data)           => api.post('/contracts', data);
 export const updateContract        = (id, data)       => api.put(`/contracts/${id}`, data);
 export const deleteContract        = (id)             => api.delete(`/contracts/${id}`);
-export const updateContractStatus  = (id, status)     => api.patch(`/contracts/${id}/status`, { status });
+export const updateContractStatus  = (id, status)     => api.patch(`/contracts/${id}/status?status=${status}`);
 export const getContractsByVendor  = (vendorId)       => api.get(`/contracts/vendor/${vendorId}`);
 export const getContractsByStatus  = (status)         => api.get(`/contracts/status/${status}`);
 export const getContractsByProject = (projectId)      => api.get(`/contracts/project/${projectId}`);
