@@ -217,6 +217,7 @@ export default function VendorRegister() {
       if (!form.email.trim())       e.email       = 'Email is required';
       else if (!/\S+@\S+\.\S+/.test(form.email)) e.email = 'Invalid email';
       if (!form.phone.trim())       e.phone       = 'Phone is required';
+      else if (!/^[6-9]\d{9}$/.test(form.phone.trim())) e.phone = 'Enter a valid 10-digit mobile number';
     }
     if (step === 3) {
       if (!form.username.trim()) e.username = 'Username is required';
