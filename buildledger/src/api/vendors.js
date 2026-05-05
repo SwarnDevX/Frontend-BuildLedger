@@ -18,11 +18,12 @@ export const uploadVendorDocument = (vendorId, file, docType) => {
   });
 };
 
-export const replaceVendorDocument = (vendorId, documentId, file, docType) => {
+export const replaceVendorDocument = (vendorId, file, docType, remarks) => {
   const formData = new FormData();
   formData.append('file', file);
-  const type = docType || 'PAN_CARD';
-  return api.put(`/vendors/${vendorId}/documents/replace?documentId=${documentId}&docType=${encodeURIComponent(type)}`, formData, {
+  const params = new URLSearchParams({ docType: docType || 'PAN_CARD' });
+  if (remarks) params.set('remarks', remarks);
+  return api.put(`/vendors/${vendorId}/documents/replace?${params.toString()}`, formData, {
     headers: { 'Content-Type': undefined },
   });
 };
@@ -49,3 +50,7 @@ export const getDocumentsByStatus = (status)         => api.get(`/vendors/docume
 
 // Self-registration (PUBLIC - no auth needed)
 export const registerVendor = (data) => api.post('/vendors/register', data);
+
+// Vendor-specific login (PUBLIC - verifies against vendor table)
+export const vendorLogin = (username, password) =>
+  api.post('/vendors/auth/login', { username, password });

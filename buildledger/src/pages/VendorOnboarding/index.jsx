@@ -6,6 +6,7 @@ import {
   Lock, Eye, EyeOff, FileText, Upload, X, AlertCircle, ShieldCheck,
 } from 'lucide-react';
 import { registerVendor, uploadVendorDocument } from '../../api/vendors';
+import PageBackground from '../../components/ui/PageBackground';
 import toast from 'react-hot-toast';
 
 const CATEGORIES = [
@@ -32,24 +33,6 @@ const STEPS = [
   { id: 5, label: 'Done',      icon: CheckCircle2 },
 ];
 
-/* ── Background layout shared between all steps ── */
-function PageBackground() {
-  return (
-    <div className="absolute inset-0 pointer-events-none overflow-hidden">
-      <div className="absolute -top-48 -left-24 w-[500px] h-[500px] rounded-full"
-        style={{ background: 'radial-gradient(circle, rgba(37,99,235,0.35) 0%, transparent 65%)', filter: 'blur(40px)' }} />
-      <div className="absolute top-1/3 -right-32 w-96 h-96 rounded-full"
-        style={{ background: 'radial-gradient(circle, rgba(14,165,233,0.18) 0%, transparent 65%)', filter: 'blur(50px)' }} />
-      <div className="absolute -bottom-32 left-1/3 w-80 h-80 rounded-full"
-        style={{ background: 'radial-gradient(circle, rgba(99,102,241,0.15) 0%, transparent 65%)', filter: 'blur(40px)' }} />
-      <div className="absolute inset-0"
-        style={{
-          backgroundImage: 'linear-gradient(rgba(255,255,255,0.04) 1px, transparent 1px), linear-gradient(90deg, rgba(255,255,255,0.04) 1px, transparent 1px)',
-          backgroundSize: '48px 48px',
-        }} />
-    </div>
-  );
-}
 
 function StepIndicator({ current }) {
   return (
@@ -353,6 +336,20 @@ export default function VendorRegister() {
               }}
             >
               Go to Login <ArrowRight size={14} />
+            </Link>
+
+            <Link
+              to="/vendor/reupload-documents"
+              className="flex items-center justify-center gap-2 py-3 rounded-xl text-sm font-medium mt-3 transition-all"
+              style={{
+                background: 'rgba(255,255,255,0.04)',
+                border: '1px solid rgba(255,255,255,0.08)',
+                color: '#64748b',
+              }}
+              onMouseEnter={e => { e.currentTarget.style.color = '#94a3b8'; e.currentTarget.style.background = 'rgba(255,255,255,0.08)'; }}
+              onMouseLeave={e => { e.currentTarget.style.color = '#64748b'; e.currentTarget.style.background = 'rgba(255,255,255,0.04)'; }}
+            >
+              Forgot to upload documents? Re-upload here
             </Link>
           </div>
         </div>

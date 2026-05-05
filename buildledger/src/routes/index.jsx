@@ -3,6 +3,7 @@ import AppShell from '../components/layout/AppShell';
 import ProtectedRoute from '../components/auth/ProtectedRoute';
 import Login from '../pages/Login';
 import VendorOnboarding from '../pages/VendorOnboarding';
+import VendorReuploadDocuments from '../pages/VendorReuploadDocuments';
 import Unauthorized from '../pages/Unauthorized';
 import Dashboard from '../pages/Dashboard';
 import VendorManagement from '../pages/VendorManagement';
@@ -18,6 +19,7 @@ export const router = createBrowserRouter([
   // Public routes
   { path: '/login', element: <Login /> },
   { path: '/vendor/register', element: <VendorOnboarding /> },
+  { path: '/vendor/reupload-documents', element: <VendorReuploadDocuments /> },
   { path: '/unauthorized', element: <Unauthorized /> },
 
   // Protected app shell

@@ -288,6 +288,27 @@ export default function Login() {
             Register as a Vendor
           </Link>
 
+          {/* Vendor re-upload documents */}
+          <Link
+            to="/vendor/reupload-documents"
+            className="flex items-center justify-center gap-2.5 w-full py-3 rounded-xl text-sm font-medium transition-all mt-2"
+            style={{
+              background: "rgba(255,255,255,0.03)",
+              border: "1px solid rgba(255,255,255,0.07)",
+              color: "#64748b",
+            }}
+            onMouseEnter={(e) => {
+              e.currentTarget.style.background = "rgba(255,255,255,0.07)";
+              e.currentTarget.style.color = "#94a3b8";
+            }}
+            onMouseLeave={(e) => {
+              e.currentTarget.style.background = "rgba(255,255,255,0.03)";
+              e.currentTarget.style.color = "#64748b";
+            }}
+          >
+            Already registered? Re-upload documents
+          </Link>
+
           <p className="text-center text-[11px] text-slate-600 mt-6">
             Secured · BuildLedger © 2026
           </p>
