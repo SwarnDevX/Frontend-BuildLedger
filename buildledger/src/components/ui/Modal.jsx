@@ -1,5 +1,6 @@
 import { X } from 'lucide-react';
 import { useEffect } from 'react';
+import { createPortal } from 'react-dom';
 
 export default function Modal({ open, onClose, title, children, wide }) {
   useEffect(() => {
@@ -9,8 +10,9 @@ export default function Modal({ open, onClose, title, children, wide }) {
   }, [onClose]);
 
   if (!open) return null;
-  return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center p-4">
+
+  const modalContent = (
+    <div className="fixed inset-0 z-50 flex items-center justify-center p-4" style={{ position: 'fixed', top: 0, left: 0, right: 0, bottom: 0 }}>
       <div className="absolute inset-0 bg-slate-900/30 backdrop-blur-sm" onClick={onClose} />
       <div className={`relative glass-card w-full animate-fadeIn ${wide ? 'max-w-3xl' : 'max-w-lg'}`}>
         <div className="flex items-center justify-between px-6 pt-5 pb-4 border-b border-slate-100">
@@ -23,5 +25,7 @@ export default function Modal({ open, onClose, title, children, wide }) {
       </div>
     </div>
   );
+
+  return createPortal(modalContent, document.body);
 }
 
