@@ -106,8 +106,8 @@ function StepIndicator({ current }) {
 }
 
 const inputStyle = (err) => ({
-  background: 'rgba(255,255,255,0.06)',
-  border: `1px solid ${err ? 'rgba(239,68,68,0.5)' : 'rgba(255,255,255,0.1)'}`,
+  background: err ? 'rgba(245,158,11,0.06)' : 'rgba(255,255,255,0.06)',
+  border: `1px solid ${err ? 'rgba(245,158,11,0.5)' : 'rgba(255,255,255,0.1)'}`,
   color: 'white',
 });
 
@@ -118,8 +118,8 @@ const focusStyle = {
 };
 
 const blurStyle = (err) => ({
-  borderColor: err ? 'rgba(239,68,68,0.5)' : 'rgba(255,255,255,0.1)',
-  background:  'rgba(255,255,255,0.06)',
+  borderColor: err ? 'rgba(245,158,11,0.5)' : 'rgba(255,255,255,0.1)',
+  background:  err ? 'rgba(245,158,11,0.06)' : 'rgba(255,255,255,0.06)',
   boxShadow:   'none',
 });
 
@@ -129,7 +129,7 @@ function Field({ icon: Icon, label, type = 'text', value, onChange, placeholder,
   return (
     <div>
       <label className="block text-xs font-semibold text-slate-300 mb-1.5 tracking-wide">
-        {label.toUpperCase()} {required && <span className="text-red-400">*</span>}
+        {label.toUpperCase()} {required && <span className="text-amber-400">*</span>}
       </label>
       <div className="relative group">
         {Icon && (
@@ -181,7 +181,7 @@ function Field({ icon: Icon, label, type = 'text', value, onChange, placeholder,
         )}
       </div>
       {error && (
-        <p className="flex items-center gap-1 text-xs text-red-400 mt-1">
+        <p className="flex items-center gap-1 text-xs text-amber-400 mt-1">
           <AlertCircle size={11} /> {error}
         </p>
       )}

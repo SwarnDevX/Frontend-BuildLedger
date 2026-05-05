@@ -1,6 +1,6 @@
 import { useState, useEffect } from 'react';
 import { BarChart, Bar, XAxis, YAxis, Tooltip, ResponsiveContainer, CartesianGrid } from 'recharts';
-import { DollarSign, Clock, CheckCircle2, AlertTriangle, ChevronRight, Plus, Loader2, RefreshCw } from 'lucide-react';
+import { DollarSign, Clock, CheckCircle2, AlertTriangle, ChevronRight, Plus, Loader2, RefreshCw, AlertCircle } from 'lucide-react';
 import Badge from '../../components/ui/Badge';
 import Modal from '../../components/ui/Modal';
 import { getAllInvoices, createInvoice, approveInvoice, rejectInvoice } from '../../api/invoices';
@@ -111,6 +111,8 @@ export default function InvoicePayment() {
   const [formI, setFormI]           = useState(EMPTY_INVOICE);
   const [formP, setFormP]           = useState(EMPTY_PAYMENT);
   const [saving, setSaving]         = useState(false);
+  const [iErrors, setIErrors] = useState({});
+  const [pErrors, setPErrors] = useState({});
 
   const canApprove = ['ADMIN', 'FINANCE_OFFICER'].includes(user?.role);
   const canCreate  = ['ADMIN', 'VENDOR'].includes(user?.role);
@@ -150,9 +152,13 @@ export default function InvoicePayment() {
   };
 
   const handleCreate = async () => {
-    if (!formI.contractId || !formI.amount) { toast.error('Contract and amount are required'); return; }
-    if (!formI.date)    { toast.error('Invoice date is required'); return; }
-    if (!formI.dueDate) { toast.error('Due date is required'); return; }
+    const e = {};
+    if (!formI.contractId) e.contractId = 'Please select a contract';
+    if (!formI.amount)     e.amount     = 'Amount is required';
+    if (!formI.date)       e.date       = 'Invoice date is required';
+    if (!formI.dueDate)    e.dueDate    = 'Due date is required';
+    setIErrors(e);
+    if (Object.keys(e).length) return;
     setSaving(true);
     try {
       await createInvoice({
@@ -165,15 +171,19 @@ export default function InvoicePayment() {
       toast.success('Invoice submitted for review');
       setShowCreate(false);
       setFormI(EMPTY_INVOICE);
+      setIErrors({});
       fetchData();
     } catch (err) { showErrors(err); }
     finally { setSaving(false); }
   };
 
   const handleProcessPayment = async () => {
-    if (!formP.transactionReference) { toast.error('Transaction reference is required'); return; }
-    if (!formP.amount)  { toast.error('Amount is required'); return; }
-    if (!formP.date)    { toast.error('Payment date is required'); return; }
+    const e = {};
+    if (!formP.amount)               e.amount               = 'Amount is required';
+    if (!formP.date)                 e.date                 = 'Payment date is required';
+    if (!formP.transactionReference) e.transactionReference = 'Transaction reference is required';
+    setPErrors(e);
+    if (Object.keys(e).length) return;
     setSaving(true);
     try {
       const res = await processPayment({
@@ -186,7 +196,6 @@ export default function InvoicePayment() {
       });
       const paymentId = res.data?.data?.paymentId;
       if (paymentId) {
-        // Advance payment: PENDING → PROCESSING → COMPLETED (marks invoice PAID)
         await updatePaymentStatus(paymentId, 'PROCESSING');
         await updatePaymentStatus(paymentId, 'COMPLETED');
         toast.success('Payment processed — invoice marked as PAID');
@@ -195,6 +204,7 @@ export default function InvoicePayment() {
       }
       setShowPayment(false);
       setSelectedInvoice(null);
+      setPErrors({});
       fetchData();
     } catch (err) { showErrors(err); }
     finally { setSaving(false); }
@@ -332,7 +342,7 @@ export default function InvoicePayment() {
       </div>
 
       {/* Create Invoice Modal */}
-      <Modal open={showCreate} onClose={() => { setShowCreate(false); setFormI(EMPTY_INVOICE); }} title="Submit Invoice">
+      <Modal open={showCreate} onClose={() => { setShowCreate(false); setFormI(EMPTY_INVOICE); setIErrors({}); }} title="Submit Invoice">
         <div className="space-y-4">
           <div className="p-3 rounded-xl text-xs text-slate-500 flex items-start gap-2"
             style={{ background: 'rgba(37,99,235,0.06)', border: '1px solid rgba(37,99,235,0.12)' }}>
@@ -341,8 +351,8 @@ export default function InvoicePayment() {
           </div>
           <div>
             <label className="text-xs font-semibold text-slate-600 block mb-1">Contract * <span className="text-slate-400 font-normal">(must be ACTIVE)</span></label>
-            <select value={formI.contractId} onChange={setI('contractId')}
-              className="w-full text-sm bg-white/60 border border-slate-200 rounded-xl px-3 py-2.5 outline-none focus:border-blue-400">
+            <select value={formI.contractId} onChange={e => { setI('contractId')(e); if (e.target.value) setIErrors(p => ({ ...p, contractId: '' })); }}
+              className={`w-full text-sm bg-white/60 border rounded-xl px-3 py-2.5 outline-none focus:border-blue-400 transition-all ${iErrors.contractId ? 'border-amber-400 bg-amber-50/30' : 'border-slate-200'}`}>
               <option value="">Select contract…</option>
               {contracts.filter(c => c.status === 'ACTIVE').map(c => (
                 <option key={c.contractId} value={c.contractId}>
@@ -350,31 +360,35 @@ export default function InvoicePayment() {
                 </option>
               ))}
             </select>
+            {iErrors.contractId && <p className="flex items-center gap-1 text-xs text-amber-500 mt-1"><AlertCircle size={11} className="shrink-0" />{iErrors.contractId}</p>}
           </div>
           <div>
             <label className="text-xs font-semibold text-slate-600 block mb-1">Amount ($) *</label>
-            <input type="number" min="0.01" step="0.01" value={formI.amount} onChange={setI('amount')} placeholder="0.00"
-              className="w-full text-sm bg-white/60 border border-slate-200 rounded-xl px-3 py-2.5 outline-none focus:border-blue-400" />
+            <input type="number" min="0.01" step="0.01" value={formI.amount} onChange={e => { setI('amount')(e); if (e.target.value) setIErrors(p => ({ ...p, amount: '' })); }} placeholder="0.00"
+              className={`w-full text-sm bg-white/60 border rounded-xl px-3 py-2.5 outline-none focus:border-blue-400 transition-all ${iErrors.amount ? 'border-amber-400 bg-amber-50/30' : 'border-slate-200'}`} />
+            {iErrors.amount && <p className="flex items-center gap-1 text-xs text-amber-500 mt-1"><AlertCircle size={11} className="shrink-0" />{iErrors.amount}</p>}
           </div>
           <div className="grid grid-cols-2 gap-3">
             <div>
               <label className="text-xs font-semibold text-slate-600 block mb-1">Invoice Date * <span className="text-slate-400 font-normal">(today or earlier)</span></label>
-              <input type="date" max={today} value={formI.date} onChange={setI('date')}
-                className="w-full text-sm bg-white/60 border border-slate-200 rounded-xl px-3 py-2.5 outline-none focus:border-blue-400" />
+              <input type="date" max={today} value={formI.date} onChange={e => { setI('date')(e); if (e.target.value) setIErrors(p => ({ ...p, date: '' })); }}
+                className={`w-full text-sm bg-white/60 border rounded-xl px-3 py-2.5 outline-none focus:border-blue-400 transition-all ${iErrors.date ? 'border-amber-400 bg-amber-50/30' : 'border-slate-200'}`} />
+              {iErrors.date && <p className="flex items-center gap-1 text-xs text-amber-500 mt-1"><AlertCircle size={11} className="shrink-0" />{iErrors.date}</p>}
             </div>
             <div>
               <label className="text-xs font-semibold text-slate-600 block mb-1">Due Date * <span className="text-slate-400 font-normal">(future)</span></label>
-              <input type="date" min={tomorrow} value={formI.dueDate} onChange={setI('dueDate')}
-                className="w-full text-sm bg-white/60 border border-slate-200 rounded-xl px-3 py-2.5 outline-none focus:border-blue-400" />
+              <input type="date" min={tomorrow} value={formI.dueDate} onChange={e => { setI('dueDate')(e); if (e.target.value) setIErrors(p => ({ ...p, dueDate: '' })); }}
+                className={`w-full text-sm bg-white/60 border rounded-xl px-3 py-2.5 outline-none focus:border-blue-400 transition-all ${iErrors.dueDate ? 'border-amber-400 bg-amber-50/30' : 'border-slate-200'}`} />
+              {iErrors.dueDate && <p className="flex items-center gap-1 text-xs text-amber-500 mt-1"><AlertCircle size={11} className="shrink-0" />{iErrors.dueDate}</p>}
             </div>
           </div>
           <div>
             <label className="text-xs font-semibold text-slate-600 block mb-1">Description</label>
             <textarea value={formI.description} onChange={setI('description')} rows={2} placeholder="Optional description…"
-              className="w-full text-sm bg-white/60 border border-slate-200 rounded-xl px-3 py-2.5 outline-none focus:border-blue-400 resize-none" />
+              className="w-full text-sm bg-white/60 border border-slate-200 rounded-xl px-3 py-2.5 outline-none focus:border-blue-400 resize-none transition-all" />
           </div>
           <div className="flex gap-2 justify-end pt-2">
-            <button className="btn-secondary text-xs" onClick={() => { setShowCreate(false); setFormI(EMPTY_INVOICE); }}>Cancel</button>
+            <button className="btn-secondary text-xs" onClick={() => { setShowCreate(false); setFormI(EMPTY_INVOICE); setIErrors({}); }}>Cancel</button>
             <button className="btn-primary text-xs" onClick={handleCreate} disabled={saving}>
               {saving ? <><Loader2 size={12} className="animate-spin" /> Submitting…</> : 'Submit Invoice'}
             </button>
@@ -383,7 +397,7 @@ export default function InvoicePayment() {
       </Modal>
 
       {/* Process Payment Modal */}
-      <Modal open={showPayment} onClose={() => { setShowPayment(false); setSelectedInvoice(null); }} title={`Process Payment — Invoice #${selectedInvoice?.invoiceId}`}>
+      <Modal open={showPayment} onClose={() => { setShowPayment(false); setSelectedInvoice(null); setPErrors({}); }} title={`Process Payment — Invoice #${selectedInvoice?.invoiceId}`}>
         <div className="space-y-4">
           {selectedInvoice && (
             <div className="p-3 rounded-xl text-sm" style={{ background: 'rgba(20,184,166,0.06)', border: '1px solid rgba(20,184,166,0.15)' }}>
@@ -393,33 +407,36 @@ export default function InvoicePayment() {
           )}
           <div>
             <label className="text-xs font-semibold text-slate-600 block mb-1">Amount ($) *</label>
-            <input type="number" min="0.01" step="0.01" value={formP.amount} onChange={setP('amount')}
-              className="w-full text-sm bg-white/60 border border-slate-200 rounded-xl px-3 py-2.5 outline-none focus:border-blue-400" />
+            <input type="number" min="0.01" step="0.01" value={formP.amount} onChange={e => { setP('amount')(e); if (e.target.value) setPErrors(p => ({ ...p, amount: '' })); }}
+              className={`w-full text-sm bg-white/60 border rounded-xl px-3 py-2.5 outline-none focus:border-blue-400 transition-all ${pErrors.amount ? 'border-amber-400 bg-amber-50/30' : 'border-slate-200'}`} />
+            {pErrors.amount && <p className="flex items-center gap-1 text-xs text-amber-500 mt-1"><AlertCircle size={11} className="shrink-0" />{pErrors.amount}</p>}
           </div>
           <div>
             <label className="text-xs font-semibold text-slate-600 block mb-1">Payment Date * <span className="text-slate-400 font-normal">(today or earlier)</span></label>
-            <input type="date" max={today} value={formP.date} onChange={setP('date')}
-              className="w-full text-sm bg-white/60 border border-slate-200 rounded-xl px-3 py-2.5 outline-none focus:border-blue-400" />
+            <input type="date" max={today} value={formP.date} onChange={e => { setP('date')(e); if (e.target.value) setPErrors(p => ({ ...p, date: '' })); }}
+              className={`w-full text-sm bg-white/60 border rounded-xl px-3 py-2.5 outline-none focus:border-blue-400 transition-all ${pErrors.date ? 'border-amber-400 bg-amber-50/30' : 'border-slate-200'}`} />
+            {pErrors.date && <p className="flex items-center gap-1 text-xs text-amber-500 mt-1"><AlertCircle size={11} className="shrink-0" />{pErrors.date}</p>}
           </div>
           <div>
             <label className="text-xs font-semibold text-slate-600 block mb-1">Payment Method *</label>
             <select value={formP.method} onChange={setP('method')}
-              className="w-full text-sm bg-white/60 border border-slate-200 rounded-xl px-3 py-2.5 outline-none focus:border-blue-400">
+              className="w-full text-sm bg-white/60 border border-slate-200 rounded-xl px-3 py-2.5 outline-none focus:border-blue-400 transition-all">
               {PAYMENT_METHODS.map(m => <option key={m} value={m}>{m.replace('_', ' ')}</option>)}
             </select>
           </div>
           <div>
             <label className="text-xs font-semibold text-slate-600 block mb-1">Transaction Reference * <span className="text-slate-400 font-normal">(letters, digits, hyphens, slashes)</span></label>
-            <input value={formP.transactionReference} onChange={setP('transactionReference')} placeholder="e.g. TXN-2024-001"
-              className="w-full text-sm bg-white/60 border border-slate-200 rounded-xl px-3 py-2.5 outline-none focus:border-blue-400" />
+            <input value={formP.transactionReference} onChange={e => { setP('transactionReference')(e); if (e.target.value) setPErrors(p => ({ ...p, transactionReference: '' })); }} placeholder="e.g. TXN-2024-001"
+              className={`w-full text-sm bg-white/60 border rounded-xl px-3 py-2.5 outline-none focus:border-blue-400 transition-all ${pErrors.transactionReference ? 'border-amber-400 bg-amber-50/30' : 'border-slate-200'}`} />
+            {pErrors.transactionReference && <p className="flex items-center gap-1 text-xs text-amber-500 mt-1"><AlertCircle size={11} className="shrink-0" />{pErrors.transactionReference}</p>}
           </div>
           <div>
             <label className="text-xs font-semibold text-slate-600 block mb-1">Remarks</label>
             <textarea value={formP.remarks} onChange={setP('remarks')} rows={2}
-              className="w-full text-sm bg-white/60 border border-slate-200 rounded-xl px-3 py-2.5 outline-none focus:border-blue-400 resize-none" />
+              className="w-full text-sm bg-white/60 border border-slate-200 rounded-xl px-3 py-2.5 outline-none focus:border-blue-400 resize-none transition-all" />
           </div>
           <div className="flex gap-2 justify-end pt-2">
-            <button className="btn-secondary text-xs" onClick={() => { setShowPayment(false); setSelectedInvoice(null); }}>Cancel</button>
+            <button className="btn-secondary text-xs" onClick={() => { setShowPayment(false); setSelectedInvoice(null); setPErrors({}); }}>Cancel</button>
             <button className="btn-primary text-xs" onClick={handleProcessPayment} disabled={saving}>
               {saving ? <><Loader2 size={12} className="animate-spin" /> Processing…</> : 'Process Payment'}
             </button>

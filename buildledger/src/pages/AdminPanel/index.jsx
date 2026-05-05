@@ -237,7 +237,7 @@ export default function AdminPanel() {
       </div>
 
       {/* Create/Edit User Modal */}
-      <Modal open={showCreate} onClose={() => setShowCreate(false)} title={editUser ? `Edit User: ${editUser.name || editUser.username}` : 'Create New User'}>
+      <Modal open={showCreate} onClose={() => { setShowCreate(false); setFormErr({}); }} title={editUser ? `Edit User: ${editUser.name || editUser.username}` : 'Create New User'}>
         <div className="space-y-4">
           {/* Role selector (only for create) */}
           {!editUser && (
@@ -264,12 +264,12 @@ export default function AdminPanel() {
               <label className="text-xs font-semibold text-slate-600 block mb-1">{f.label}</label>
               <input type={f.type || 'text'} placeholder={f.placeholder} value={form[f.key]} onChange={set(f.key)}
                 className="w-full text-sm bg-white/60 border rounded-xl px-3 py-2.5 outline-none focus:border-blue-400 focus:bg-white transition-all"
-                style={{ borderColor: formErr[f.key] ? '#EF4444' : undefined }} />
-              {formErr[f.key] && <p className="text-xs text-red-500 mt-0.5">{formErr[f.key]}</p>}
+                style={{ borderColor: formErr[f.key] ? '#F59E0B' : undefined, background: formErr[f.key] ? 'rgba(245,158,11,0.04)' : undefined }} />
+              {formErr[f.key] && <p className="flex items-center gap-1 text-xs text-amber-500 mt-0.5"><AlertCircle size={11} className="shrink-0" />{formErr[f.key]}</p>}
             </div>
           ))}
           <div className="flex gap-2 justify-end pt-2">
-            <button className="btn-secondary text-xs" onClick={() => setShowCreate(false)}>Cancel</button>
+            <button className="btn-secondary text-xs" onClick={() => { setShowCreate(false); setFormErr({}); }}>Cancel</button>
             <button className="btn-primary text-xs" onClick={handleSave} disabled={saving}>
               {saving ? <><Loader2 size={12} className="animate-spin" /> Saving…</> : editUser ? 'Update User' : 'Create User'}
             </button>

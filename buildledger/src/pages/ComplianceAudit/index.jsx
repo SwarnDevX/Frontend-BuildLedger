@@ -1,6 +1,6 @@
 import { useState, useEffect } from 'react';
 import { PieChart, Pie, Cell, ResponsiveContainer, Tooltip } from 'recharts';
-import { ShieldCheck, AlertTriangle, CheckCircle2, Clock, Plus, Loader2, RefreshCw } from 'lucide-react';
+import { ShieldCheck, AlertTriangle, CheckCircle2, Clock, Plus, Loader2, RefreshCw, AlertCircle } from 'lucide-react';
 import Badge from '../../components/ui/Badge';
 import Modal from '../../components/ui/Modal';
 import { getAllCompliance, createCompliance, updateComplianceStatus } from '../../api/compliance';
@@ -123,6 +123,8 @@ export default function ComplianceAudit() {
   const [saving, setSaving]           = useState(false);
   const [cLoading, setCLoading]       = useState({});
   const [aLoading, setALoading]       = useState({});
+  const [cErrors, setCErrors] = useState({});
+  const [aErrors, setAErrors] = useState({});
 
   const canManage = ['ADMIN', 'COMPLIANCE_OFFICER'].includes(user?.role);
   const today     = new Date().toISOString().split('T')[0];
@@ -160,9 +162,12 @@ export default function ComplianceAudit() {
   ];
 
   const handleCreateCompliance = async () => {
-    if (!formC.contractId) { toast.error('Contract is required'); return; }
-    if (!formC.type)        { toast.error('Compliance type is required'); return; }
-    if (!formC.date)        { toast.error('Date is required'); return; }
+    const e = {};
+    if (!formC.contractId) e.contractId = 'Please select a contract';
+    if (!formC.type)       e.type       = 'Compliance type is required';
+    if (!formC.date)       e.date       = 'Date is required';
+    setCErrors(e);
+    if (Object.keys(e).length) return;
     setSaving(true);
     try {
       await createCompliance({
@@ -175,15 +180,19 @@ export default function ComplianceAudit() {
       toast.success('Compliance record created');
       setShowCreateC(false);
       setFormC(EMPTY_COMPLIANCE);
+      setCErrors({});
       fetchData();
     } catch (err) { showErrors(err); }
     finally { setSaving(false); }
   };
 
   const handleCreateAudit = async () => {
-    if (!formA.complianceOfficerId) { toast.error('Compliance officer is required'); return; }
-    if (!formA.scope || formA.scope.trim().length < 5) { toast.error('Scope must be at least 5 characters'); return; }
-    if (!formA.date) { toast.error('Scheduled date is required'); return; }
+    const e = {};
+    if (!formA.complianceOfficerId)                       e.complianceOfficerId = 'Please select an officer';
+    if (!formA.scope || formA.scope.trim().length < 5)    e.scope               = 'Scope must be at least 5 characters';
+    if (!formA.date)                                      e.date                = 'Scheduled date is required';
+    setAErrors(e);
+    if (Object.keys(e).length) return;
     setSaving(true);
     try {
       await createAudit({
@@ -195,6 +204,7 @@ export default function ComplianceAudit() {
       toast.success('Audit scheduled');
       setShowCreateA(false);
       setFormA(EMPTY_AUDIT);
+      setAErrors({});
       fetchData();
     } catch (err) { showErrors(err); }
     finally { setSaving(false); }
@@ -401,12 +411,12 @@ export default function ComplianceAudit() {
       </div>
 
       {/* Create Compliance Modal */}
-      <Modal open={showCreateC} onClose={() => { setShowCreateC(false); setFormC(EMPTY_COMPLIANCE); }} title="Create Compliance Record">
+      <Modal open={showCreateC} onClose={() => { setShowCreateC(false); setFormC(EMPTY_COMPLIANCE); setCErrors({}); }} title="Create Compliance Record">
         <div className="space-y-4">
           <div>
             <label className="text-xs font-semibold text-slate-600 block mb-1">Contract *</label>
-            <select value={formC.contractId} onChange={setC('contractId')}
-              className="w-full text-sm bg-white/60 border border-slate-200 rounded-xl px-3 py-2.5 outline-none focus:border-blue-400">
+            <select value={formC.contractId} onChange={e => { setC('contractId')(e); if (e.target.value) setCErrors(p => ({ ...p, contractId: '' })); }}
+              className={`w-full text-sm bg-white/60 border rounded-xl px-3 py-2.5 outline-none focus:border-blue-400 transition-all ${cErrors.contractId ? 'border-amber-400 bg-amber-50/30' : 'border-slate-200'}`}>
               <option value="">Select contract…</option>
               {contracts.map(c => (
                 <option key={c.contractId} value={c.contractId}>
@@ -414,34 +424,37 @@ export default function ComplianceAudit() {
                 </option>
               ))}
             </select>
+            {cErrors.contractId && <p className="flex items-center gap-1 text-xs text-amber-500 mt-1"><AlertCircle size={11} className="shrink-0" />{cErrors.contractId}</p>}
           </div>
           <div>
             <label className="text-xs font-semibold text-slate-600 block mb-1">Compliance Type *</label>
-            <select value={formC.type} onChange={setC('type')}
-              className="w-full text-sm bg-white/60 border border-slate-200 rounded-xl px-3 py-2.5 outline-none focus:border-blue-400">
+            <select value={formC.type} onChange={e => { setC('type')(e); if (e.target.value) setCErrors(p => ({ ...p, type: '' })); }}
+              className={`w-full text-sm bg-white/60 border rounded-xl px-3 py-2.5 outline-none focus:border-blue-400 transition-all ${cErrors.type ? 'border-amber-400 bg-amber-50/30' : 'border-slate-200'}`}>
               <option value="">Select type…</option>
               {COMPLIANCE_TYPES.map(t => <option key={t} value={t}>{t.replace('_', ' ')}</option>)}
             </select>
+            {cErrors.type && <p className="flex items-center gap-1 text-xs text-amber-500 mt-1"><AlertCircle size={11} className="shrink-0" />{cErrors.type}</p>}
           </div>
           <div>
             <label className="text-xs font-semibold text-slate-600 block mb-1">
               Date * <span className="text-slate-400 font-normal">(today or earlier)</span>
             </label>
-            <input type="date" max={today} value={formC.date} onChange={setC('date')}
-              className="w-full text-sm bg-white/60 border border-slate-200 rounded-xl px-3 py-2.5 outline-none focus:border-blue-400" />
+            <input type="date" max={today} value={formC.date} onChange={e => { setC('date')(e); if (e.target.value) setCErrors(p => ({ ...p, date: '' })); }}
+              className={`w-full text-sm bg-white/60 border rounded-xl px-3 py-2.5 outline-none focus:border-blue-400 transition-all ${cErrors.date ? 'border-amber-400 bg-amber-50/30' : 'border-slate-200'}`} />
+            {cErrors.date && <p className="flex items-center gap-1 text-xs text-amber-500 mt-1"><AlertCircle size={11} className="shrink-0" />{cErrors.date}</p>}
           </div>
           <div>
             <label className="text-xs font-semibold text-slate-600 block mb-1">Result <span className="text-slate-400 font-normal">(max 200 chars)</span></label>
             <input value={formC.result} onChange={setC('result')} maxLength={200} placeholder="Compliance check outcome…"
-              className="w-full text-sm bg-white/60 border border-slate-200 rounded-xl px-3 py-2.5 outline-none focus:border-blue-400" />
+              className="w-full text-sm bg-white/60 border border-slate-200 rounded-xl px-3 py-2.5 outline-none focus:border-blue-400 transition-all" />
           </div>
           <div>
             <label className="text-xs font-semibold text-slate-600 block mb-1">Notes</label>
             <textarea value={formC.notes} onChange={setC('notes')} rows={2} maxLength={1000}
-              className="w-full text-sm bg-white/60 border border-slate-200 rounded-xl px-3 py-2.5 outline-none focus:border-blue-400 resize-none" />
+              className="w-full text-sm bg-white/60 border border-slate-200 rounded-xl px-3 py-2.5 outline-none focus:border-blue-400 resize-none transition-all" />
           </div>
           <div className="flex gap-2 justify-end pt-2">
-            <button className="btn-secondary text-xs" onClick={() => { setShowCreateC(false); setFormC(EMPTY_COMPLIANCE); }}>Cancel</button>
+            <button className="btn-secondary text-xs" onClick={() => { setShowCreateC(false); setFormC(EMPTY_COMPLIANCE); setCErrors({}); }}>Cancel</button>
             <button className="btn-primary text-xs" onClick={handleCreateCompliance} disabled={saving}>
               {saving ? <Loader2 size={12} className="animate-spin" /> : 'Create'}
             </button>
@@ -450,39 +463,44 @@ export default function ComplianceAudit() {
       </Modal>
 
       {/* Create Audit Modal */}
-      <Modal open={showCreateA} onClose={() => { setShowCreateA(false); setFormA(EMPTY_AUDIT); }} title="Schedule Audit">
+      <Modal open={showCreateA} onClose={() => { setShowCreateA(false); setFormA(EMPTY_AUDIT); setAErrors({}); }} title="Schedule Audit">
         <div className="space-y-4">
           <div>
             <label className="text-xs font-semibold text-slate-600 block mb-1">Compliance Officer *</label>
-            <select value={formA.complianceOfficerId} onChange={setA('complianceOfficerId')}
-              className="w-full text-sm bg-white/60 border border-slate-200 rounded-xl px-3 py-2.5 outline-none focus:border-blue-400">
+            <select value={formA.complianceOfficerId} onChange={e => { setA('complianceOfficerId')(e); if (e.target.value) setAErrors(p => ({ ...p, complianceOfficerId: '' })); }}
+              className={`w-full text-sm bg-white/60 border rounded-xl px-3 py-2.5 outline-none focus:border-blue-400 transition-all ${aErrors.complianceOfficerId ? 'border-amber-400 bg-amber-50/30' : 'border-slate-200'}`}>
               <option value="">Select officer…</option>
               {officers.map(o => (
                 <option key={o.userId} value={o.userId}>{o.name || o.username} ({o.role})</option>
               ))}
             </select>
-            {officers.length === 0 && <p className="text-xs text-amber-500 mt-1">No compliance officers found.</p>}
+            {aErrors.complianceOfficerId
+              ? <p className="flex items-center gap-1 text-xs text-amber-500 mt-1"><AlertCircle size={11} className="shrink-0" />{aErrors.complianceOfficerId}</p>
+              : officers.length === 0 && <p className="text-xs text-amber-500 mt-1">No compliance officers found.</p>
+            }
           </div>
           <div>
             <label className="text-xs font-semibold text-slate-600 block mb-1">Scope * <span className="text-slate-400 font-normal">(min 5 chars, max 300)</span></label>
-            <textarea value={formA.scope} onChange={setA('scope')} rows={3} maxLength={300}
+            <textarea value={formA.scope} onChange={e => { setA('scope')(e); if (e.target.value.trim().length >= 5) setAErrors(p => ({ ...p, scope: '' })); }} rows={3} maxLength={300}
               placeholder="Describe what this audit covers…"
-              className="w-full text-sm bg-white/60 border border-slate-200 rounded-xl px-3 py-2.5 outline-none focus:border-blue-400 resize-none" />
+              className={`w-full text-sm bg-white/60 border rounded-xl px-3 py-2.5 outline-none focus:border-blue-400 resize-none transition-all ${aErrors.scope ? 'border-amber-400 bg-amber-50/30' : 'border-slate-200'}`} />
+            {aErrors.scope && <p className="flex items-center gap-1 text-xs text-amber-500 mt-1"><AlertCircle size={11} className="shrink-0" />{aErrors.scope}</p>}
           </div>
           <div>
             <label className="text-xs font-semibold text-slate-600 block mb-1">
               Scheduled Date * <span className="text-slate-400 font-normal">(today or future)</span>
             </label>
-            <input type="date" min={today} value={formA.date} onChange={setA('date')}
-              className="w-full text-sm bg-white/60 border border-slate-200 rounded-xl px-3 py-2.5 outline-none focus:border-blue-400" />
+            <input type="date" min={today} value={formA.date} onChange={e => { setA('date')(e); if (e.target.value) setAErrors(p => ({ ...p, date: '' })); }}
+              className={`w-full text-sm bg-white/60 border rounded-xl px-3 py-2.5 outline-none focus:border-blue-400 transition-all ${aErrors.date ? 'border-amber-400 bg-amber-50/30' : 'border-slate-200'}`} />
+            {aErrors.date && <p className="flex items-center gap-1 text-xs text-amber-500 mt-1"><AlertCircle size={11} className="shrink-0" />{aErrors.date}</p>}
           </div>
           <div>
             <label className="text-xs font-semibold text-slate-600 block mb-1">Initial Findings <span className="text-slate-400 font-normal">(optional)</span></label>
             <textarea value={formA.findings} onChange={setA('findings')} rows={2} maxLength={2000}
-              className="w-full text-sm bg-white/60 border border-slate-200 rounded-xl px-3 py-2.5 outline-none focus:border-blue-400 resize-none" />
+              className="w-full text-sm bg-white/60 border border-slate-200 rounded-xl px-3 py-2.5 outline-none focus:border-blue-400 resize-none transition-all" />
           </div>
           <div className="flex gap-2 justify-end pt-2">
-            <button className="btn-secondary text-xs" onClick={() => { setShowCreateA(false); setFormA(EMPTY_AUDIT); }}>Cancel</button>
+            <button className="btn-secondary text-xs" onClick={() => { setShowCreateA(false); setFormA(EMPTY_AUDIT); setAErrors({}); }}>Cancel</button>
             <button className="btn-primary text-xs" onClick={handleCreateAudit} disabled={saving}>
               {saving ? <Loader2 size={12} className="animate-spin" /> : 'Schedule Audit'}
             </button>

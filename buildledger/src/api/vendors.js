@@ -44,7 +44,7 @@ export const downloadVendorDocument = async ({ vendorId, documentId, docType, fi
   return downloadDocument(resolvedId);
 };
 
-export const getPendingDocuments  = ()               => api.get('/vendors/documents/pending-review');
+export const getPendingDocuments  = ()               => api.get('/vendors/documents/status/PENDING');
 export const getDocumentsByStatus = (status)         => api.get(`/vendors/documents/status/${status}`);
 
 // Self-registration (PUBLIC - no auth needed)

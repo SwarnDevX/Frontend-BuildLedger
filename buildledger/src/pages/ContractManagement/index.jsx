@@ -2,7 +2,7 @@ import { useState, useEffect, useCallback } from 'react';
 import {
   Plus, CheckCircle2, Circle, XCircle, Clock, Loader2, RefreshCw,
   FileText, ChevronRight, AlertTriangle, Zap, Archive, Trash2, Edit3,
-  ClipboardList, ArrowRight, Shield,
+  ClipboardList, ArrowRight, Shield, AlertCircle,
 } from 'lucide-react';
 import Badge from '../../components/ui/Badge';
 import ProgressBar from '../../components/ui/ProgressBar';
@@ -142,6 +142,7 @@ function ContractTermsTab({ contractId, isDraft, canManage }) {
   const [newTerm, setNewTerm]   = useState('');
   const [flag, setFlag]         = useState(false);
   const [adding, setAdding]     = useState(false);
+  const [termError, setTermError] = useState('');
 
   const loadTerms = useCallback(async () => {
     setLoading(true);
@@ -155,7 +156,8 @@ function ContractTermsTab({ contractId, isDraft, canManage }) {
   useEffect(() => { loadTerms(); }, [loadTerms]);
 
   const handleAdd = async () => {
-    if (!newTerm.trim()) return;
+    if (!newTerm.trim()) { setTermError('Description is required'); return; }
+    setTermError('');
     setAdding(true);
     try {
       await addContractTerm(contractId, { description: newTerm, complianceFlag: flag });
@@ -196,11 +198,16 @@ function ContractTermsTab({ contractId, isDraft, canManage }) {
         <div className="pt-2 space-y-2">
           <textarea
             value={newTerm}
-            onChange={e => setNewTerm(e.target.value)}
+            onChange={e => { setNewTerm(e.target.value); if (e.target.value.trim()) setTermError(''); }}
             placeholder="Add a new contract term…"
             rows={2}
-            className="w-full text-sm bg-white/60 border border-slate-200 rounded-xl px-3 py-2 outline-none focus:border-blue-400 transition-all resize-none"
+            className={`w-full text-sm bg-white/60 border rounded-xl px-3 py-2 outline-none focus:border-blue-400 transition-all resize-none ${termError ? 'border-amber-400 bg-amber-50/40' : 'border-slate-200'}`}
           />
+          {termError && (
+            <p className="flex items-center gap-1 text-xs text-amber-500 mt-1">
+              <AlertCircle size={11} className="shrink-0" /> {termError}
+            </p>
+          )}
           <div className="flex items-center justify-between">
             <label className="flex items-center gap-2 text-xs text-slate-500 cursor-pointer">
               <input type="checkbox" checked={flag} onChange={e => setFlag(e.target.checked)} className="accent-amber-500" />
@@ -221,6 +228,18 @@ function ContractDetailModal({ contract, vendors, projects, onClose, onRefresh, 
   const [editing, setEditing] = useState(false);
   const [editForm, setEditForm] = useState({});
   const [saving, setSaving] = useState(false);
+  const [editErrors, setEditErrors] = useState({});
+
+  const validateEdit = () => {
+    const e = {};
+    if (!editForm.vendorId)  e.vendorId  = 'Please select a vendor';
+    if (!editForm.projectId) e.projectId = 'Please select a project';
+    if (!editForm.value)     e.value     = 'Contract value is required';
+    if (!editForm.startDate) e.startDate = 'Start date is required';
+    if (!editForm.endDate)   e.endDate   = 'End date is required';
+    setEditErrors(e);
+    return Object.keys(e).length === 0;
+  };
 
   if (!contract) return null;
 
@@ -241,10 +260,7 @@ function ContractDetailModal({ contract, vendors, projects, onClose, onRefresh, 
   };
 
   const handleSave = async () => {
-    if (!editForm.vendorId || !editForm.projectId || !editForm.startDate || !editForm.endDate || !editForm.value) {
-      toast.error('All required fields must be filled');
-      return;
-    }
+    if (!validateEdit()) return;
     setSaving(true);
     try {
       await updateContract(contract.contractId, {
@@ -362,34 +378,39 @@ function ContractDetailModal({ contract, vendors, projects, onClose, onRefresh, 
                   <div>
                     <label className="text-xs font-semibold text-slate-600 block mb-1">Vendor *</label>
                     <select value={editForm.vendorId} onChange={setF('vendorId')}
-                      className="w-full text-sm bg-white/60 border border-slate-200 rounded-xl px-3 py-2 outline-none focus:border-blue-400">
+                      className={`w-full text-sm bg-white/60 border rounded-xl px-3 py-2 outline-none focus:border-blue-400 transition-all ${editErrors.vendorId ? 'border-amber-400 bg-amber-50/30' : 'border-slate-200'}`}>
                       <option value="">Select vendor…</option>
                       {activeVendors.map(v => <option key={v.vendorId} value={v.vendorId}>{v.name}</option>)}
                     </select>
+                    {editErrors.vendorId && <p className="flex items-center gap-1 text-xs text-amber-500 mt-1"><AlertCircle size={11} className="shrink-0" />{editErrors.vendorId}</p>}
                   </div>
                   <div>
                     <label className="text-xs font-semibold text-slate-600 block mb-1">Project *</label>
                     <select value={editForm.projectId} onChange={setF('projectId')}
-                      className="w-full text-sm bg-white/60 border border-slate-200 rounded-xl px-3 py-2 outline-none focus:border-blue-400">
+                      className={`w-full text-sm bg-white/60 border rounded-xl px-3 py-2 outline-none focus:border-blue-400 transition-all ${editErrors.projectId ? 'border-amber-400 bg-amber-50/30' : 'border-slate-200'}`}>
                       <option value="">Select project…</option>
                       {projects.map(p => <option key={p.projectId} value={p.projectId}>{p.name}</option>)}
                     </select>
+                    {editErrors.projectId && <p className="flex items-center gap-1 text-xs text-amber-500 mt-1"><AlertCircle size={11} className="shrink-0" />{editErrors.projectId}</p>}
                   </div>
                   <div>
                     <label className="text-xs font-semibold text-slate-600 block mb-1">Start Date *</label>
                     <input type="date" value={editForm.startDate} onChange={setF('startDate')}
-                      className="w-full text-sm bg-white/60 border border-slate-200 rounded-xl px-3 py-2 outline-none focus:border-blue-400" />
+                      className={`w-full text-sm bg-white/60 border rounded-xl px-3 py-2 outline-none focus:border-blue-400 transition-all ${editErrors.startDate ? 'border-amber-400 bg-amber-50/30' : 'border-slate-200'}`} />
+                    {editErrors.startDate && <p className="flex items-center gap-1 text-xs text-amber-500 mt-1"><AlertCircle size={11} className="shrink-0" />{editErrors.startDate}</p>}
                   </div>
                   <div>
                     <label className="text-xs font-semibold text-slate-600 block mb-1">End Date *</label>
                     <input type="date" value={editForm.endDate} onChange={setF('endDate')}
-                      className="w-full text-sm bg-white/60 border border-slate-200 rounded-xl px-3 py-2 outline-none focus:border-blue-400" />
+                      className={`w-full text-sm bg-white/60 border rounded-xl px-3 py-2 outline-none focus:border-blue-400 transition-all ${editErrors.endDate ? 'border-amber-400 bg-amber-50/30' : 'border-slate-200'}`} />
+                    {editErrors.endDate && <p className="flex items-center gap-1 text-xs text-amber-500 mt-1"><AlertCircle size={11} className="shrink-0" />{editErrors.endDate}</p>}
                   </div>
                 </div>
                 <div>
                   <label className="text-xs font-semibold text-slate-600 block mb-1">Contract Value ($) *</label>
                   <input type="number" value={editForm.value} onChange={setF('value')} placeholder="0.00"
-                    className="w-full text-sm bg-white/60 border border-slate-200 rounded-xl px-3 py-2 outline-none focus:border-blue-400" />
+                    className={`w-full text-sm bg-white/60 border rounded-xl px-3 py-2 outline-none focus:border-blue-400 transition-all ${editErrors.value ? 'border-amber-400 bg-amber-50/30' : 'border-slate-200'}`} />
+                  {editErrors.value && <p className="flex items-center gap-1 text-xs text-amber-500 mt-1"><AlertCircle size={11} className="shrink-0" />{editErrors.value}</p>}
                 </div>
                 <div>
                   <label className="text-xs font-semibold text-slate-600 block mb-1">Description</label>
@@ -397,7 +418,7 @@ function ContractDetailModal({ contract, vendors, projects, onClose, onRefresh, 
                     className="w-full text-sm bg-white/60 border border-slate-200 rounded-xl px-3 py-2 outline-none focus:border-blue-400 resize-none" />
                 </div>
                 <div className="flex gap-2 justify-end">
-                  <button className="btn-secondary text-xs" onClick={() => setEditing(false)}>Cancel</button>
+                  <button className="btn-secondary text-xs" onClick={() => { setEditing(false); setEditErrors({}); }}>Cancel</button>
                   <button className="btn-primary text-xs" onClick={handleSave} disabled={saving}>
                     {saving ? <><Loader2 size={11} className="animate-spin" /> Saving…</> : 'Save Changes'}
                   </button>
@@ -447,6 +468,18 @@ export default function ContractManagement() {
   const [form, setForm]              = useState(EMPTY_FORM);
   const [saving, setSaving]          = useState(false);
   const [filterStatus, setFilterStatus] = useState('ALL');
+  const [formErrors, setFormErrors]  = useState({});
+
+  const validateCreate = () => {
+    const e = {};
+    if (!form.vendorId)   e.vendorId   = 'Please select a vendor';
+    if (!form.projectId)  e.projectId  = 'Please select a project';
+    if (!form.value)      e.value      = 'Contract value is required';
+    if (!form.startDate)  e.startDate  = 'Start date is required';
+    if (!form.endDate)    e.endDate    = 'End date is required';
+    setFormErrors(e);
+    return Object.keys(e).length === 0;
+  };
 
   const canManage = ['ADMIN', 'PROJECT_MANAGER'].includes(user?.role);
 
@@ -464,10 +497,7 @@ export default function ContractManagement() {
   useEffect(() => { fetchData(); }, [fetchData]);
 
   const handleCreate = async () => {
-    if (!form.vendorId || !form.projectId || !form.startDate || !form.endDate || !form.value) {
-      toast.error('All required fields must be filled');
-      return;
-    }
+    if (!validateCreate()) return;
     setSaving(true);
     try {
       await createContract({
@@ -621,7 +651,7 @@ export default function ContractManagement() {
       />
 
       {/* Create Contract Modal */}
-      <Modal open={showCreate} onClose={() => { setShowCreate(false); setForm(EMPTY_FORM); }} title="Create New Contract">
+      <Modal open={showCreate} onClose={() => { setShowCreate(false); setForm(EMPTY_FORM); setFormErrors({}); }} title="Create New Contract">
         <div className="space-y-4">
           <div className="p-3 rounded-xl text-xs text-slate-500 flex items-center gap-2"
             style={{ background: 'rgba(37,99,235,0.06)', border: '1px solid rgba(37,99,235,0.12)' }}>
@@ -631,48 +661,57 @@ export default function ContractManagement() {
 
           <div>
             <label className="text-xs font-semibold text-slate-600 block mb-1">Vendor * <span className="text-slate-400 font-normal">(must be ACTIVE)</span></label>
-            <select value={form.vendorId} onChange={set('vendorId')}
-              className="w-full text-sm bg-white/60 border border-slate-200 rounded-xl px-3 py-2.5 outline-none focus:border-blue-400 transition-all">
+            <select value={form.vendorId} onChange={e => { set('vendorId')(e); if (e.target.value) setFormErrors(p => ({ ...p, vendorId: '' })); }}
+              className={`w-full text-sm bg-white/60 border rounded-xl px-3 py-2.5 outline-none focus:border-blue-400 transition-all ${formErrors.vendorId ? 'border-amber-400 bg-amber-50/30' : 'border-slate-200'}`}>
               <option value="">Select vendor…</option>
               {activeVendors.map(v => (
                 <option key={v.vendorId} value={v.vendorId}>{v.name} (#{v.vendorId})</option>
               ))}
             </select>
-            {activeVendors.length === 0 && (
-              <p className="text-xs text-amber-500 mt-1">No active vendors. Approve a vendor first.</p>
-            )}
+            {formErrors.vendorId
+              ? <p className="flex items-center gap-1 text-xs text-amber-500 mt-1"><AlertCircle size={11} className="shrink-0" />{formErrors.vendorId}</p>
+              : activeVendors.length === 0 && <p className="text-xs text-amber-500 mt-1">No active vendors. Approve a vendor first.</p>
+            }
           </div>
 
           <div>
             <label className="text-xs font-semibold text-slate-600 block mb-1">Project *</label>
-            <select value={form.projectId} onChange={set('projectId')}
-              className="w-full text-sm bg-white/60 border border-slate-200 rounded-xl px-3 py-2.5 outline-none focus:border-blue-400 transition-all">
+            <select value={form.projectId} onChange={e => { set('projectId')(e); if (e.target.value) setFormErrors(p => ({ ...p, projectId: '' })); }}
+              className={`w-full text-sm bg-white/60 border rounded-xl px-3 py-2.5 outline-none focus:border-blue-400 transition-all ${formErrors.projectId ? 'border-amber-400 bg-amber-50/30' : 'border-slate-200'}`}>
               <option value="">Select project…</option>
               {projects.map(p => (
                 <option key={p.projectId} value={p.projectId}>{p.name || `Project #${p.projectId}`}</option>
               ))}
             </select>
-            {projects.length === 0 && (
-              <p className="text-xs text-amber-500 mt-1">No projects found. Create a project first.</p>
-            )}
+            {formErrors.projectId
+              ? <p className="flex items-center gap-1 text-xs text-amber-500 mt-1"><AlertCircle size={11} className="shrink-0" />{formErrors.projectId}</p>
+              : projects.length === 0 && <p className="text-xs text-amber-500 mt-1">No projects found. Create a project first.</p>
+            }
           </div>
 
           <div>
             <label className="text-xs font-semibold text-slate-600 block mb-1">Contract Value ($) *</label>
-            <input type="number" min="0.01" step="0.01" value={form.value} onChange={set('value')} placeholder="0.00"
-              className="w-full text-sm bg-white/60 border border-slate-200 rounded-xl px-3 py-2.5 outline-none focus:border-blue-400 transition-all" />
+            <input type="number" min="0.01" step="0.01" value={form.value}
+              onChange={e => { set('value')(e); if (e.target.value) setFormErrors(p => ({ ...p, value: '' })); }}
+              placeholder="0.00"
+              className={`w-full text-sm bg-white/60 border rounded-xl px-3 py-2.5 outline-none focus:border-blue-400 transition-all ${formErrors.value ? 'border-amber-400 bg-amber-50/30' : 'border-slate-200'}`} />
+            {formErrors.value && <p className="flex items-center gap-1 text-xs text-amber-500 mt-1"><AlertCircle size={11} className="shrink-0" />{formErrors.value}</p>}
           </div>
 
           <div className="grid grid-cols-2 gap-3">
             <div>
               <label className="text-xs font-semibold text-slate-600 block mb-1">Start Date *</label>
-              <input type="date" value={form.startDate} onChange={set('startDate')}
-                className="w-full text-sm bg-white/60 border border-slate-200 rounded-xl px-3 py-2.5 outline-none focus:border-blue-400 transition-all" />
+              <input type="date" value={form.startDate}
+                onChange={e => { set('startDate')(e); if (e.target.value) setFormErrors(p => ({ ...p, startDate: '' })); }}
+                className={`w-full text-sm bg-white/60 border rounded-xl px-3 py-2.5 outline-none focus:border-blue-400 transition-all ${formErrors.startDate ? 'border-amber-400 bg-amber-50/30' : 'border-slate-200'}`} />
+              {formErrors.startDate && <p className="flex items-center gap-1 text-xs text-amber-500 mt-1"><AlertCircle size={11} className="shrink-0" />{formErrors.startDate}</p>}
             </div>
             <div>
               <label className="text-xs font-semibold text-slate-600 block mb-1">End Date *</label>
-              <input type="date" value={form.endDate} onChange={set('endDate')}
-                className="w-full text-sm bg-white/60 border border-slate-200 rounded-xl px-3 py-2.5 outline-none focus:border-blue-400 transition-all" />
+              <input type="date" value={form.endDate}
+                onChange={e => { set('endDate')(e); if (e.target.value) setFormErrors(p => ({ ...p, endDate: '' })); }}
+                className={`w-full text-sm bg-white/60 border rounded-xl px-3 py-2.5 outline-none focus:border-blue-400 transition-all ${formErrors.endDate ? 'border-amber-400 bg-amber-50/30' : 'border-slate-200'}`} />
+              {formErrors.endDate && <p className="flex items-center gap-1 text-xs text-amber-500 mt-1"><AlertCircle size={11} className="shrink-0" />{formErrors.endDate}</p>}
             </div>
           </div>
 
@@ -683,7 +722,7 @@ export default function ContractManagement() {
           </div>
 
           <div className="flex gap-2 justify-end pt-1">
-            <button className="btn-secondary text-xs" onClick={() => { setShowCreate(false); setForm(EMPTY_FORM); }}>Cancel</button>
+            <button className="btn-secondary text-xs" onClick={() => { setShowCreate(false); setForm(EMPTY_FORM); setFormErrors({}); }}>Cancel</button>
             <button className="btn-primary text-xs" onClick={handleCreate} disabled={saving}>
               {saving ? <><Loader2 size={12} className="animate-spin" /> Creating…</> : <><FileText size={12} /> Create Contract</>}
             </button>

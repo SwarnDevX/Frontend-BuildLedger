@@ -1,5 +1,5 @@
 import { useState, useEffect } from 'react';
-import { CheckCircle2, Clock, Truck, Package, RotateCcw, Calendar, Loader2, Plus, Wrench } from 'lucide-react';
+import { CheckCircle2, Clock, Truck, Package, RotateCcw, Calendar, Loader2, Plus, Wrench, AlertCircle } from 'lucide-react';
 import Badge from '../../components/ui/Badge';
 import ProgressBar from '../../components/ui/ProgressBar';
 import Modal from '../../components/ui/Modal';
@@ -149,6 +149,8 @@ export default function DeliveryTracking() {
   const [formS, setFormS]           = useState(EMPTY_SERVICE);
   const [saving, setSaving]         = useState(false);
   const [updating, setUpdating]     = useState({});
+  const [dErrors, setDErrors] = useState({});
+  const [sErrors, setSErrors] = useState({});
 
   const canCreate = ['ADMIN', 'VENDOR'].includes(user?.role);
   const today     = new Date().toISOString().split('T')[0];
@@ -169,10 +171,13 @@ export default function DeliveryTracking() {
   // ── Delivery handlers ──────────────────────────────────────────────────────
 
   const handleCreateDelivery = async () => {
-    if (!formD.contractId) { toast.error('Contract is required'); return; }
-    if (!formD.item)       { toast.error('Item is required'); return; }
-    if (!formD.quantity)   { toast.error('Quantity is required'); return; }
-    if (!formD.date)       { toast.error('Delivery date is required'); return; }
+    const e = {};
+    if (!formD.contractId)    e.contractId = 'Please select a contract';
+    if (!formD.item.trim())   e.item       = 'Item is required';
+    if (!formD.quantity)      e.quantity   = 'Quantity is required';
+    if (!formD.date)          e.date       = 'Delivery date is required';
+    setDErrors(e);
+    if (Object.keys(e).length) return;
     setSaving(true);
     try {
       await createDelivery({
@@ -186,6 +191,7 @@ export default function DeliveryTracking() {
       toast.success('Delivery created');
       setShowCreateD(false);
       setFormD(EMPTY_DELIVERY);
+      setDErrors({});
       fetchData();
     } catch (err) { showErrors(err); }
     finally { setSaving(false); }
@@ -204,10 +210,12 @@ export default function DeliveryTracking() {
   // ── Service handlers ───────────────────────────────────────────────────────
 
   const handleCreateService = async () => {
-    if (!formS.contractId)    { toast.error('Contract is required'); return; }
-    if (!formS.description || formS.description.trim().length < 10)
-      { toast.error('Description must be at least 10 characters'); return; }
-    if (!formS.completionDate) { toast.error('Completion date is required'); return; }
+    const e = {};
+    if (!formS.contractId)                         e.contractId    = 'Please select a contract';
+    if (!formS.description || formS.description.trim().length < 10) e.description = 'Description must be at least 10 characters';
+    if (!formS.completionDate)                     e.completionDate = 'Completion date is required';
+    setSErrors(e);
+    if (Object.keys(e).length) return;
     setSaving(true);
     try {
       await createService({
@@ -219,6 +227,7 @@ export default function DeliveryTracking() {
       toast.success('Service created');
       setShowCreateS(false);
       setFormS(EMPTY_SERVICE);
+      setSErrors({});
       fetchData();
     } catch (err) { showErrors(err); }
     finally { setSaving(false); }
@@ -460,12 +469,12 @@ export default function DeliveryTracking() {
       )}
 
       {/* ── Create Delivery Modal ── */}
-      <Modal open={showCreateD} onClose={() => { setShowCreateD(false); setFormD(EMPTY_DELIVERY); }} title="Create Delivery">
+      <Modal open={showCreateD} onClose={() => { setShowCreateD(false); setFormD(EMPTY_DELIVERY); setDErrors({}); }} title="Create Delivery">
         <div className="space-y-4">
           <div>
             <label className="text-xs font-semibold text-slate-600 block mb-1">Contract *</label>
-            <select value={formD.contractId} onChange={setD('contractId')}
-              className="w-full text-sm bg-white/60 border border-slate-200 rounded-xl px-3 py-2.5 outline-none focus:border-blue-400">
+            <select value={formD.contractId} onChange={e => { setD('contractId')(e); if (e.target.value) setDErrors(p => ({ ...p, contractId: '' })); }}
+              className={`w-full text-sm bg-white/60 border rounded-xl px-3 py-2.5 outline-none focus:border-blue-400 transition-all ${dErrors.contractId ? 'border-amber-400 bg-amber-50/30' : 'border-slate-200'}`}>
               <option value="">Select contract…</option>
               {contracts.filter(c => c.status === 'ACTIVE').map(c => (
                 <option key={c.contractId} value={c.contractId}>
@@ -473,41 +482,45 @@ export default function DeliveryTracking() {
                 </option>
               ))}
             </select>
-            {contracts.filter(c => c.status === 'ACTIVE').length === 0 && (
-              <p className="text-xs text-amber-500 mt-1">No active contracts. Activate a contract first.</p>
-            )}
+            {dErrors.contractId
+              ? <p className="flex items-center gap-1 text-xs text-amber-500 mt-1"><AlertCircle size={11} className="shrink-0" />{dErrors.contractId}</p>
+              : contracts.filter(c => c.status === 'ACTIVE').length === 0 && <p className="text-xs text-amber-500 mt-1">No active contracts. Activate a contract first.</p>
+            }
           </div>
           <div>
             <label className="text-xs font-semibold text-slate-600 block mb-1">Item *</label>
-            <input value={formD.item} onChange={setD('item')} placeholder="Item description (min 2 chars)"
-              className="w-full text-sm bg-white/60 border border-slate-200 rounded-xl px-3 py-2.5 outline-none focus:border-blue-400" />
+            <input value={formD.item} onChange={e => { setD('item')(e); if (e.target.value.trim()) setDErrors(p => ({ ...p, item: '' })); }} placeholder="Item description (min 2 chars)"
+              className={`w-full text-sm bg-white/60 border rounded-xl px-3 py-2.5 outline-none focus:border-blue-400 transition-all ${dErrors.item ? 'border-amber-400 bg-amber-50/30' : 'border-slate-200'}`} />
+            {dErrors.item && <p className="flex items-center gap-1 text-xs text-amber-500 mt-1"><AlertCircle size={11} className="shrink-0" />{dErrors.item}</p>}
           </div>
           <div className="grid grid-cols-2 gap-3">
             <div>
               <label className="text-xs font-semibold text-slate-600 block mb-1">Quantity *</label>
-              <input type="number" min="0.01" step="0.01" value={formD.quantity} onChange={setD('quantity')} placeholder="0.00"
-                className="w-full text-sm bg-white/60 border border-slate-200 rounded-xl px-3 py-2.5 outline-none focus:border-blue-400" />
+              <input type="number" min="0.01" step="0.01" value={formD.quantity} onChange={e => { setD('quantity')(e); if (e.target.value) setDErrors(p => ({ ...p, quantity: '' })); }} placeholder="0.00"
+                className={`w-full text-sm bg-white/60 border rounded-xl px-3 py-2.5 outline-none focus:border-blue-400 transition-all ${dErrors.quantity ? 'border-amber-400 bg-amber-50/30' : 'border-slate-200'}`} />
+              {dErrors.quantity && <p className="flex items-center gap-1 text-xs text-amber-500 mt-1"><AlertCircle size={11} className="shrink-0" />{dErrors.quantity}</p>}
             </div>
             <div>
               <label className="text-xs font-semibold text-slate-600 block mb-1">Unit</label>
               <input value={formD.unit} onChange={setD('unit')} placeholder="tons, kg, pcs…"
-                className="w-full text-sm bg-white/60 border border-slate-200 rounded-xl px-3 py-2.5 outline-none focus:border-blue-400" />
+                className="w-full text-sm bg-white/60 border border-slate-200 rounded-xl px-3 py-2.5 outline-none focus:border-blue-400 transition-all" />
             </div>
           </div>
           <div>
             <label className="text-xs font-semibold text-slate-600 block mb-1">
               Delivery Date * <span className="text-slate-400 font-normal">(today or earlier)</span>
             </label>
-            <input type="date" max={today} value={formD.date} onChange={setD('date')}
-              className="w-full text-sm bg-white/60 border border-slate-200 rounded-xl px-3 py-2.5 outline-none focus:border-blue-400" />
+            <input type="date" max={today} value={formD.date} onChange={e => { setD('date')(e); if (e.target.value) setDErrors(p => ({ ...p, date: '' })); }}
+              className={`w-full text-sm bg-white/60 border rounded-xl px-3 py-2.5 outline-none focus:border-blue-400 transition-all ${dErrors.date ? 'border-amber-400 bg-amber-50/30' : 'border-slate-200'}`} />
+            {dErrors.date && <p className="flex items-center gap-1 text-xs text-amber-500 mt-1"><AlertCircle size={11} className="shrink-0" />{dErrors.date}</p>}
           </div>
           <div>
             <label className="text-xs font-semibold text-slate-600 block mb-1">Remarks</label>
             <textarea value={formD.remarks} onChange={setD('remarks')} rows={2} placeholder="Optional remarks…"
-              className="w-full text-sm bg-white/60 border border-slate-200 rounded-xl px-3 py-2.5 outline-none focus:border-blue-400 resize-none" />
+              className="w-full text-sm bg-white/60 border border-slate-200 rounded-xl px-3 py-2.5 outline-none focus:border-blue-400 resize-none transition-all" />
           </div>
           <div className="flex gap-2 justify-end pt-2">
-            <button className="btn-secondary text-xs" onClick={() => { setShowCreateD(false); setFormD(EMPTY_DELIVERY); }}>Cancel</button>
+            <button className="btn-secondary text-xs" onClick={() => { setShowCreateD(false); setFormD(EMPTY_DELIVERY); setDErrors({}); }}>Cancel</button>
             <button className="btn-primary text-xs" onClick={handleCreateDelivery} disabled={saving}>
               {saving ? <><Loader2 size={12} className="animate-spin" /> Creating…</> : 'Create Delivery'}
             </button>
@@ -516,12 +529,12 @@ export default function DeliveryTracking() {
       </Modal>
 
       {/* ── Create Service Modal ── */}
-      <Modal open={showCreateS} onClose={() => { setShowCreateS(false); setFormS(EMPTY_SERVICE); }} title="Create Service">
+      <Modal open={showCreateS} onClose={() => { setShowCreateS(false); setFormS(EMPTY_SERVICE); setSErrors({}); }} title="Create Service">
         <div className="space-y-4">
           <div>
             <label className="text-xs font-semibold text-slate-600 block mb-1">Contract *</label>
-            <select value={formS.contractId} onChange={setS('contractId')}
-              className="w-full text-sm bg-white/60 border border-slate-200 rounded-xl px-3 py-2.5 outline-none focus:border-blue-400">
+            <select value={formS.contractId} onChange={e => { setS('contractId')(e); if (e.target.value) setSErrors(p => ({ ...p, contractId: '' })); }}
+              className={`w-full text-sm bg-white/60 border rounded-xl px-3 py-2.5 outline-none focus:border-blue-400 transition-all ${sErrors.contractId ? 'border-amber-400 bg-amber-50/30' : 'border-slate-200'}`}>
               <option value="">Select contract…</option>
               {contracts.filter(c => c.status === 'ACTIVE').map(c => (
                 <option key={c.contractId} value={c.contractId}>
@@ -529,26 +542,29 @@ export default function DeliveryTracking() {
                 </option>
               ))}
             </select>
+            {sErrors.contractId && <p className="flex items-center gap-1 text-xs text-amber-500 mt-1"><AlertCircle size={11} className="shrink-0" />{sErrors.contractId}</p>}
           </div>
           <div>
             <label className="text-xs font-semibold text-slate-600 block mb-1">Description * <span className="text-slate-400 font-normal">(min 10 chars)</span></label>
-            <textarea value={formS.description} onChange={setS('description')} rows={3} placeholder="Describe the service to be provided…"
-              className="w-full text-sm bg-white/60 border border-slate-200 rounded-xl px-3 py-2.5 outline-none focus:border-blue-400 resize-none" />
+            <textarea value={formS.description} onChange={e => { setS('description')(e); if (e.target.value.trim().length >= 10) setSErrors(p => ({ ...p, description: '' })); }} rows={3} placeholder="Describe the service to be provided…"
+              className={`w-full text-sm bg-white/60 border rounded-xl px-3 py-2.5 outline-none focus:border-blue-400 resize-none transition-all ${sErrors.description ? 'border-amber-400 bg-amber-50/30' : 'border-slate-200'}`} />
+            {sErrors.description && <p className="flex items-center gap-1 text-xs text-amber-500 mt-1"><AlertCircle size={11} className="shrink-0" />{sErrors.description}</p>}
           </div>
           <div>
             <label className="text-xs font-semibold text-slate-600 block mb-1">
               Expected Completion Date * <span className="text-slate-400 font-normal">(today or later)</span>
             </label>
-            <input type="date" min={today} value={formS.completionDate} onChange={setS('completionDate')}
-              className="w-full text-sm bg-white/60 border border-slate-200 rounded-xl px-3 py-2.5 outline-none focus:border-blue-400" />
+            <input type="date" min={today} value={formS.completionDate} onChange={e => { setS('completionDate')(e); if (e.target.value) setSErrors(p => ({ ...p, completionDate: '' })); }}
+              className={`w-full text-sm bg-white/60 border rounded-xl px-3 py-2.5 outline-none focus:border-blue-400 transition-all ${sErrors.completionDate ? 'border-amber-400 bg-amber-50/30' : 'border-slate-200'}`} />
+            {sErrors.completionDate && <p className="flex items-center gap-1 text-xs text-amber-500 mt-1"><AlertCircle size={11} className="shrink-0" />{sErrors.completionDate}</p>}
           </div>
           <div>
             <label className="text-xs font-semibold text-slate-600 block mb-1">Remarks</label>
             <textarea value={formS.remarks} onChange={setS('remarks')} rows={2} placeholder="Optional remarks…"
-              className="w-full text-sm bg-white/60 border border-slate-200 rounded-xl px-3 py-2.5 outline-none focus:border-blue-400 resize-none" />
+              className="w-full text-sm bg-white/60 border border-slate-200 rounded-xl px-3 py-2.5 outline-none focus:border-blue-400 resize-none transition-all" />
           </div>
           <div className="flex gap-2 justify-end pt-2">
-            <button className="btn-secondary text-xs" onClick={() => { setShowCreateS(false); setFormS(EMPTY_SERVICE); }}>Cancel</button>
+            <button className="btn-secondary text-xs" onClick={() => { setShowCreateS(false); setFormS(EMPTY_SERVICE); setSErrors({}); }}>Cancel</button>
             <button className="btn-primary text-xs" onClick={handleCreateService} disabled={saving}>
               {saving ? <><Loader2 size={12} className="animate-spin" /> Creating…</> : 'Create Service'}
             </button>
