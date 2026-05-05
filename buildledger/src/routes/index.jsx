@@ -14,6 +14,7 @@ import ComplianceAudit from '../pages/ComplianceAudit';
 import AdminPanel from '../pages/AdminPanel';
 import Notifications from '../pages/Notifications';
 import VendorDashboard from '../pages/VendorDashboard';
+import ProjectManagement from '../pages/ProjectManagement';
 
 export const router = createBrowserRouter([
   // Public routes
@@ -55,6 +56,15 @@ export const router = createBrowserRouter([
         element: (
           <ProtectedRoute roles={['ADMIN', 'PROJECT_MANAGER', 'COMPLIANCE_OFFICER']}>
             <VendorManagement />
+          </ProtectedRoute>
+        ),
+      },
+      // Projects
+      {
+        path: 'projects',
+        element: (
+          <ProtectedRoute roles={['ADMIN', 'PROJECT_MANAGER']}>
+            <ProjectManagement />
           </ProtectedRoute>
         ),
       },

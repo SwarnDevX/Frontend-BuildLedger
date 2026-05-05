@@ -2,7 +2,7 @@ import { NavLink } from 'react-router-dom';
 import {
   LayoutDashboard, Users, FileText, Truck,
   CreditCard, ShieldCheck, Settings, Bell,
-  ChevronLeft, ChevronRight, HardHat, LogOut, Package
+  ChevronLeft, ChevronRight, HardHat, LogOut, Package, Briefcase
 } from 'lucide-react';
 import { useAuth } from '../../context/AuthContext';
 
@@ -10,6 +10,7 @@ const ALL_NAV = [
   { icon: LayoutDashboard, label: 'Dashboard',     path: '/',                 roles: ['ADMIN','PROJECT_MANAGER','FINANCE_OFFICER','COMPLIANCE_OFFICER'] },
   { icon: Package,          label: 'My Portal',    path: '/vendor/dashboard', roles: ['VENDOR'] },
   { icon: Users,            label: 'Vendors',      path: '/vendors',          roles: ['ADMIN','PROJECT_MANAGER','COMPLIANCE_OFFICER'] },
+  { icon: Briefcase,        label: 'Projects',     path: '/projects',         roles: ['ADMIN','PROJECT_MANAGER'] },
   { icon: FileText,         label: 'Contracts',    path: '/contracts',        roles: ['ADMIN','PROJECT_MANAGER'] },
   { icon: Truck,            label: 'Deliveries',   path: '/deliveries',       roles: ['ADMIN','PROJECT_MANAGER','VENDOR'] },
   { icon: CreditCard,       label: 'Invoices',     path: '/invoices',         roles: ['ADMIN','FINANCE_OFFICER'] },
@@ -25,71 +26,109 @@ const ROLE_LABELS = {
 
 export default function Sidebar({ collapsed, setCollapsed }) {
   const { user, logout } = useAuth();
-  const role = user?.role || '';
+  const role     = user?.role || '';
   const navItems = ALL_NAV.filter(n => n.roles.includes(role));
   const initials = (user?.name || user?.username || 'U').split(' ').map(w => w[0]).join('').slice(0, 2).toUpperCase();
 
   return (
-    <aside className="glass-sidebar fixed left-0 top-0 h-full z-30 flex flex-col transition-all duration-300"
-      style={{ width: collapsed ? 72 : 240 }}>
+    <aside
+      className="glass-sidebar fixed left-0 top-0 h-full z-30 flex flex-col transition-all duration-300"
+      style={{ width: collapsed ? 72 : 240 }}
+    >
       {/* Logo */}
-      <div className="flex items-center gap-3 px-4 py-5 border-b border-white/60">
-        <div className="w-9 h-9 rounded-xl flex items-center justify-center shrink-0"
-          style={{ background: 'linear-gradient(135deg,#2563EB,#14B8A6)' }}>
+      <div className="flex items-center gap-3 px-4 py-5 border-b border-white/60 dark:border-slate-700/30">
+        <div
+          className="w-9 h-9 rounded-xl flex items-center justify-center shrink-0 shadow-md"
+          style={{ background: 'linear-gradient(135deg,#2563EB,#14B8A6)' }}
+        >
           <HardHat size={18} className="text-white" />
         </div>
         {!collapsed && (
           <div className="animate-fadeIn overflow-hidden">
-            <p className="font-bold text-slate-800 text-sm leading-tight">BuildLedger</p>
-            <p className="text-xs text-slate-400 leading-tight">Construction Suite</p>
+            <p className="font-bold text-slate-800 dark:text-slate-100 text-sm leading-tight">BuildLedger</p>
+            <p className="text-xs text-slate-400 dark:text-slate-500 leading-tight">Construction Suite</p>
           </div>
         )}
       </div>
+
       {/* Role badge */}
       {!collapsed && role && (
-        <div className="mx-3 mt-3 px-3 py-1.5 rounded-xl text-center animate-fadeIn"
-          style={{ background: 'rgba(37,99,235,0.07)', border: '1px solid rgba(37,99,235,0.12)' }}>
-          <p className="text-[10px] font-semibold text-blue-600 uppercase tracking-wide">{ROLE_LABELS[role] || role}</p>
+        <div
+          className="mx-3 mt-3 px-3 py-1.5 rounded-xl text-center animate-fadeIn"
+          style={{
+            background: 'rgba(37,99,235,0.07)',
+            border: '1px solid rgba(37,99,235,0.12)',
+          }}
+        >
+          <p className="text-[10px] font-semibold text-blue-600 dark:text-blue-400 uppercase tracking-wide">
+            {ROLE_LABELS[role] || role}
+          </p>
         </div>
       )}
+
       {/* Nav */}
       <nav className="flex-1 py-4 overflow-y-auto scrollbar-thin">
         {navItems.map(({ icon: Icon, label, path }) => (
-          <NavLink key={path} to={path} end={path === '/' || path === '/vendor/dashboard'}
+          <NavLink
+            key={path}
+            to={path}
+            end={path === '/' || path === '/vendor/dashboard'}
             className={({ isActive }) =>
               `flex items-center gap-3 mx-2 mb-1 px-3 py-2.5 rounded-xl transition-all duration-200
-              ${isActive ? 'bg-blue-600 text-white shadow-lg shadow-blue-500/25' : 'text-slate-500 hover:bg-white/60 hover:text-slate-800'}`
-            }>
+              ${isActive
+                ? 'bg-blue-600 text-white shadow-lg shadow-blue-500/25 dark:shadow-blue-500/20'
+                : 'text-slate-500 dark:text-slate-300 hover:bg-white/60 dark:hover:bg-slate-700/40 hover:text-slate-800 dark:hover:text-slate-100'
+              }`
+            }
+          >
             {({ isActive }) => (
               <>
                 <Icon size={18} className="shrink-0" strokeWidth={isActive ? 2.5 : 2} />
-                {!collapsed && <span className="text-sm font-medium animate-fadeIn whitespace-nowrap">{label}</span>}
+                {!collapsed && (
+                  <span className="text-sm font-medium animate-fadeIn whitespace-nowrap">{label}</span>
+                )}
               </>
             )}
           </NavLink>
         ))}
       </nav>
+
       {/* Footer */}
-      <div className="border-t border-white/60 p-3">
+      <div className="border-t border-white/60 dark:border-slate-700/30 p-3">
         {!collapsed && (
-          <div className="flex items-center gap-3 p-2 rounded-xl bg-white/40 mb-2 animate-fadeIn">
-            <div className="w-8 h-8 rounded-full bg-gradient-to-br from-blue-500 to-teal-400 flex items-center justify-center text-white text-xs font-bold shrink-0">{initials}</div>
-            <div className="min-w-0 flex-1">
-              <p className="text-xs font-semibold text-slate-700 truncate">{user?.name || user?.username}</p>
-              <p className="text-[10px] text-slate-400 truncate">{ROLE_LABELS[role] || role}</p>
+          <div className="flex items-center gap-3 p-2 rounded-xl bg-white/40 dark:bg-slate-800/50 mb-2 animate-fadeIn">
+            <div className="w-8 h-8 rounded-full bg-gradient-to-br from-blue-500 to-teal-400 flex items-center justify-center text-white text-xs font-bold shrink-0 shadow-sm">
+              {initials}
             </div>
-            <button onClick={logout} title="Logout" className="text-slate-400 shrink-0 hover:text-red-500 transition-colors p-1 rounded-lg hover:bg-red-50">
+            <div className="min-w-0 flex-1">
+              <p className="text-xs font-semibold text-slate-700 dark:text-slate-200 truncate">
+                {user?.name || user?.username}
+              </p>
+              <p className="text-[10px] text-slate-400 dark:text-slate-500 truncate">
+                {ROLE_LABELS[role] || role}
+              </p>
+            </div>
+            <button
+              onClick={logout}
+              title="Logout"
+              className="text-slate-400 shrink-0 hover:text-red-500 transition-colors p-1 rounded-lg hover:bg-red-50 dark:hover:bg-red-900/20"
+            >
               <LogOut size={14} />
             </button>
           </div>
         )}
         {collapsed && (
-          <button onClick={logout} className="w-full flex items-center justify-center p-2 mb-1 rounded-xl text-slate-400 hover:text-red-500 hover:bg-red-50 transition-all">
+          <button
+            onClick={logout}
+            className="w-full flex items-center justify-center p-2 mb-1 rounded-xl text-slate-400 hover:text-red-500 hover:bg-red-50 dark:hover:bg-red-900/20 transition-all"
+          >
             <LogOut size={16} />
           </button>
         )}
-        <button onClick={() => setCollapsed(!collapsed)}
-          className="w-full flex items-center justify-center p-2 rounded-xl text-slate-400 hover:bg-white/60 hover:text-slate-700 transition-all">
+        <button
+          onClick={() => setCollapsed(!collapsed)}
+          className="w-full flex items-center justify-center p-2 rounded-xl text-slate-400 hover:bg-white/60 dark:hover:bg-slate-700/40 hover:text-slate-700 dark:hover:text-slate-200 transition-all"
+        >
           {collapsed ? <ChevronRight size={16} /> : <ChevronLeft size={16} />}
         </button>
       </div>

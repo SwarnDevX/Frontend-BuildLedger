@@ -13,11 +13,14 @@ export default function Modal({ open, onClose, title, children, wide }) {
 
   const modalContent = (
     <div className="fixed inset-0 z-50 flex items-center justify-center p-4" style={{ position: 'fixed', top: 0, left: 0, right: 0, bottom: 0 }}>
-      <div className="absolute inset-0 bg-slate-900/30 backdrop-blur-sm" onClick={onClose} />
+      <div className="absolute inset-0 bg-slate-900/30 dark:bg-slate-950/60 backdrop-blur-sm" onClick={onClose} />
       <div className={`relative glass-card w-full animate-fadeIn ${wide ? 'max-w-3xl' : 'max-w-lg'}`}>
-        <div className="flex items-center justify-between px-6 pt-5 pb-4 border-b border-slate-100">
-          <h3 className="text-base font-semibold text-slate-800">{title}</h3>
-          <button onClick={onClose} className="w-7 h-7 rounded-lg flex items-center justify-center text-slate-400 hover:bg-slate-100 transition-colors">
+        <div className="flex items-center justify-between px-6 pt-5 pb-4 border-b border-slate-100 dark:border-slate-700/50">
+          <h3 className="text-base font-semibold text-slate-800 dark:text-slate-100">{title}</h3>
+          <button
+            onClick={onClose}
+            className="w-7 h-7 rounded-lg flex items-center justify-center text-slate-400 hover:bg-slate-100 dark:hover:bg-slate-700 transition-colors"
+          >
             <X size={15} />
           </button>
         </div>
@@ -28,4 +31,3 @@ export default function Modal({ open, onClose, title, children, wide }) {
 
   return createPortal(modalContent, document.body);
 }
-

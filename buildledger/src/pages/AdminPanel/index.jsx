@@ -122,13 +122,13 @@ export default function AdminPanel() {
 
       {/* User table */}
       <div className="glass-card overflow-hidden">
-        <div className="px-5 py-4 border-b border-slate-100 flex items-center justify-between">
+        <div className="px-5 py-4 border-b border-slate-100 dark:border-slate-700/50 flex items-center justify-between">
           <h3 className="text-sm font-semibold text-slate-700">All Users ({users.length})</h3>
           {loading && <Loader2 size={15} className="text-blue-600 animate-spin" />}
         </div>
         <div className="overflow-x-auto">
           <table className="w-full text-sm">
-            <thead className="bg-slate-50/60">
+            <thead className="bg-slate-50/60 border-b border-slate-100 dark:border-slate-700/40">
               <tr>
                 {['User','Email','Role','Status','Joined',''].map(h => (
                   <th key={h} className="text-left px-5 py-3 text-xs font-semibold text-slate-400 uppercase tracking-wide">{h}</th>
@@ -137,7 +137,7 @@ export default function AdminPanel() {
             </thead>
             <tbody>
               {users.map(u => (
-                <tr key={u.userId} className="border-b border-slate-50 hover:bg-white/50 transition-colors">
+                <tr key={u.userId} className="border-b border-slate-50 dark:border-slate-700/20 hover:bg-white/50 transition-colors">
                   <td className="px-5 py-3">
                     <div className="flex items-center gap-2.5">
                       <div className="w-8 h-8 rounded-full bg-gradient-to-br from-blue-500 to-teal-400 flex items-center justify-center text-white text-xs font-bold shrink-0">
@@ -153,16 +153,16 @@ export default function AdminPanel() {
                   <td className="px-5 py-3"><Badge status={roleBadge(u.role)} /></td>
                   <td className="px-5 py-3">
                     <span className={`flex items-center gap-1.5 text-[10px] font-semibold w-fit ${u.status === 'ACTIVE' ? 'text-green-600' : 'text-slate-400'}`}>
-                      <div className={`w-1.5 h-1.5 rounded-full ${u.status === 'ACTIVE' ? 'bg-green-500' : 'bg-slate-300'}`} />
+                      <div className={`w-1.5 h-1.5 rounded-full ${u.status === 'ACTIVE' ? 'bg-green-500' : 'bg-slate-300 dark:bg-slate-600'}`} />
                       {u.status}
                     </span>
                   </td>
                   <td className="px-5 py-3 text-xs text-slate-400">{u.createdAt?.slice(0,10) || '—'}</td>
                   <td className="px-5 py-3">
                     <div className="flex items-center gap-2">
-                      <button onClick={() => openEdit(u)} className="text-slate-400 hover:text-blue-600 transition-colors p-1 rounded-lg hover:bg-blue-50"><Edit2 size={13} /></button>
+                      <button onClick={() => openEdit(u)} className="text-slate-400 hover:text-blue-600 dark:hover:text-blue-400 transition-colors p-1 rounded-lg hover:bg-blue-50 dark:hover:bg-blue-900/20"><Edit2 size={13} /></button>
                       {u.role !== 'ADMIN' && (
-                        <button onClick={() => handleDelete(u)} className="text-slate-400 hover:text-red-500 transition-colors p-1 rounded-lg hover:bg-red-50"><Trash2 size={13} /></button>
+                        <button onClick={() => handleDelete(u)} className="text-slate-400 hover:text-red-500 dark:hover:text-red-400 transition-colors p-1 rounded-lg hover:bg-red-50 dark:hover:bg-red-900/20"><Trash2 size={13} /></button>
                       )}
                     </div>
                   </td>
@@ -185,7 +185,7 @@ export default function AdminPanel() {
         <div className="flex gap-2 flex-wrap mb-4">
           {ROLES.map(r => (
             <button key={r} onClick={() => setSelectedRole(r)}
-              className={`text-xs px-3 py-1.5 rounded-full font-medium transition-all ${selectedRole === r ? 'bg-blue-600 text-white shadow-sm' : 'bg-white/60 text-slate-500 border border-white/80 hover:bg-white'}`}>
+              className={`text-xs px-3 py-1.5 rounded-full font-medium transition-all ${selectedRole === r ? 'bg-blue-600 text-white shadow-sm' : 'bg-white/60 text-slate-500 border border-white/80 hover:bg-white dark:bg-slate-800/50 dark:text-slate-400 dark:border-slate-700/40 dark:hover:bg-slate-700/60'}`}>
               {ROLE_LABELS[r]}
             </button>
           ))}
@@ -196,7 +196,7 @@ export default function AdminPanel() {
             return (
               <div key={perm} onClick={() => togglePerm(selectedRole, idx)}
                 className={`p-3 rounded-xl border text-xs font-medium transition-all cursor-pointer select-none
-                  ${enabled ? 'bg-blue-50 border-blue-200 text-blue-700' : 'bg-slate-50 border-slate-100 text-slate-400'}
+                  ${enabled ? 'bg-blue-50 border-blue-200 text-blue-700 dark:text-blue-400' : 'bg-slate-50 border-slate-100 text-slate-400 dark:bg-slate-800/40'}
                   ${selectedRole === 'ADMIN' ? 'cursor-default' : 'hover:shadow-sm'}`}>
                 <div className="flex items-center justify-between mb-0.5">
                   <span className="leading-tight">{perm}</span>
@@ -228,7 +228,7 @@ export default function AdminPanel() {
                 <p className="text-[10px] text-slate-400">{s.desc}</p>
               </div>
               <button onClick={() => setToggles(p => ({ ...p, [s.key]: !p[s.key] }))}
-                className={`relative w-10 h-5 rounded-full transition-all ${toggles[s.key] ? 'bg-blue-600' : 'bg-slate-200'}`}>
+                className={`relative w-10 h-5 rounded-full transition-all ${toggles[s.key] ? 'bg-blue-600' : 'bg-slate-200 dark:bg-slate-600'}`}>
                 <div className={`absolute top-0.5 w-4 h-4 rounded-full bg-white shadow transition-all ${toggles[s.key] ? 'left-5' : 'left-0.5'}`} />
               </button>
             </div>
@@ -246,7 +246,7 @@ export default function AdminPanel() {
               <div className="grid grid-cols-2 gap-2">
                 {ROLES.filter(r => r !== 'ADMIN').map(r => (
                   <button key={r} type="button" onClick={() => setForm(p => ({ ...p, role: r }))}
-                    className={`text-xs px-3 py-2.5 rounded-xl font-medium transition-all border ${form.role === r ? 'bg-blue-600 text-white border-blue-600 shadow-sm shadow-blue-500/20' : 'bg-white/60 text-slate-600 border-slate-200 hover:bg-white'}`}>
+                    className={`text-xs px-3 py-2.5 rounded-xl font-medium transition-all border ${form.role === r ? 'bg-blue-600 text-white border-blue-600 shadow-sm shadow-blue-500/20' : 'bg-white/60 text-slate-600 border-slate-200 hover:bg-white dark:bg-slate-800/50 dark:text-slate-300 dark:border-slate-700/40 dark:hover:bg-slate-700/60'}`}>
                     {ROLE_LABELS[r]}
                   </button>
                 ))}

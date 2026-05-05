@@ -9,14 +9,16 @@ export default function ProgressBar({ value, color = '#2563EB', height = 6, show
   const c = color === '#2563EB' ? getColor() : color;
   return (
     <div className="flex items-center gap-2 w-full">
-      <div className="flex-1 rounded-full overflow-hidden" style={{ height, background: 'rgba(0,0,0,0.07)' }}>
+      <div
+        className="flex-1 rounded-full overflow-hidden bg-black/[0.07] dark:bg-white/[0.1]"
+        style={{ height }}
+      >
         <div
           className="h-full rounded-full transition-all duration-500"
           style={{ width: `${clamp}%`, background: c }}
         />
       </div>
-      {showLabel && <span className="text-xs font-semibold text-slate-500 w-8 text-right">{clamp}%</span>}
+      {showLabel && <span className="text-xs font-semibold text-slate-500 dark:text-slate-400 w-8 text-right">{clamp}%</span>}
     </div>
   );
 }
-

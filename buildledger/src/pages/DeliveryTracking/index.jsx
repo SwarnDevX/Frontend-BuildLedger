@@ -99,7 +99,7 @@ function Stepper({ status, steps }) {
             ${i <= idx ? 'bg-blue-600 text-white' : 'bg-slate-100 text-slate-400'}`}>
             {i < idx ? '✓' : i + 1}
           </div>
-          {i < steps.length - 1 && <div className={`w-5 h-0.5 ${i < idx ? 'bg-blue-500' : 'bg-slate-200'}`} />}
+          {i < steps.length - 1 && <div className={`w-5 h-0.5 ${i < idx ? 'bg-blue-500' : 'bg-slate-200 dark:bg-slate-700'}`} />}
         </div>
       ))}
     </div>
@@ -275,7 +275,7 @@ export default function DeliveryTracking() {
       </div>
 
       {/* Tabs */}
-      <div className="flex gap-1 border-b border-slate-200">
+      <div className="flex gap-1 border-b border-slate-200 dark:border-slate-700/50">
         {[
           { key: 'deliveries', label: 'Deliveries', icon: Truck },
           { key: 'services',   label: 'Services',   icon: Wrench },
@@ -284,7 +284,7 @@ export default function DeliveryTracking() {
           return (
             <button key={t.key} onClick={() => setTab(t.key)}
               className={`flex items-center gap-2 px-4 py-2.5 text-xs font-semibold rounded-t-lg transition-all
-                ${tab === t.key ? 'bg-blue-600 text-white' : 'text-slate-500 hover:text-slate-700'}`}>
+                ${tab === t.key ? 'bg-blue-600 text-white' : 'text-slate-500 hover:text-slate-700 dark:text-slate-400 dark:hover:text-slate-200'}`}>
               <Icon size={13} /> {t.label}
             </button>
           );
@@ -318,7 +318,7 @@ export default function DeliveryTracking() {
             {['All', ...Object.keys(DELIVERY_STATUS_MAP)].map(s => (
               <button key={s} onClick={() => setFilter(s)}
                 className={`text-xs px-3 py-1.5 rounded-full font-medium transition-all
-                  ${filter === s ? 'bg-blue-600 text-white shadow-sm' : 'glass text-slate-500 hover:bg-white'}`}>
+                  ${filter === s ? 'bg-blue-600 text-white shadow-sm' : 'glass text-slate-500 hover:bg-white dark:text-slate-400 dark:hover:bg-slate-700/60'}`}>
                 {DELIVERY_STATUS_MAP[s]?.label || s}
               </button>
             ))}
@@ -328,7 +328,7 @@ export default function DeliveryTracking() {
           <div className="glass-card overflow-hidden">
             <div className="overflow-x-auto">
               <table className="w-full text-sm">
-                <thead className="bg-slate-50/60 border-b border-slate-100">
+                <thead className="bg-slate-50/60 border-b border-slate-100 dark:border-slate-700/40">
                   <tr>
                     {['ID', 'Item', 'Contract', 'Qty / Unit', 'Delivery Date', 'Status', 'Progress', 'Steps', 'Actions'].map(h => (
                       <th key={h} className="text-left px-4 py-3 text-xs font-semibold text-slate-400 uppercase tracking-wide whitespace-nowrap">{h}</th>
@@ -342,7 +342,7 @@ export default function DeliveryTracking() {
                     const cfg      = DELIVERY_STATUS_MAP[d.status] || DELIVERY_STATUS_MAP.PENDING;
                     const progress = deliveryProgress(d.status);
                     return (
-                      <tr key={d.deliveryId} className="border-b border-slate-50 hover:bg-white/50 transition-colors">
+                      <tr key={d.deliveryId} className="border-b border-slate-50 dark:border-slate-700/20 hover:bg-white/50 transition-colors">
                         <td className="px-4 py-3 text-xs font-mono text-blue-600 font-semibold">#{d.deliveryId}</td>
                         <td className="px-4 py-3">
                           <p className="text-xs font-semibold text-slate-800">{d.item || '—'}</p>
@@ -409,7 +409,7 @@ export default function DeliveryTracking() {
             {['All', ...Object.keys(SERVICE_STATUS_MAP)].map(s => (
               <button key={s} onClick={() => setSvcFilter(s)}
                 className={`text-xs px-3 py-1.5 rounded-full font-medium transition-all
-                  ${svcFilter === s ? 'bg-blue-600 text-white shadow-sm' : 'glass text-slate-500 hover:bg-white'}`}>
+                  ${svcFilter === s ? 'bg-blue-600 text-white shadow-sm' : 'glass text-slate-500 hover:bg-white dark:text-slate-400 dark:hover:bg-slate-700/60'}`}>
                 {SERVICE_STATUS_MAP[s]?.label || s}
               </button>
             ))}
@@ -419,7 +419,7 @@ export default function DeliveryTracking() {
           <div className="glass-card overflow-hidden">
             <div className="overflow-x-auto">
               <table className="w-full text-sm">
-                <thead className="bg-slate-50/60 border-b border-slate-100">
+                <thead className="bg-slate-50/60 border-b border-slate-100 dark:border-slate-700/40">
                   <tr>
                     {['ID', 'Description', 'Contract', 'Completion Date', 'Status', 'Progress', 'Actions'].map(h => (
                       <th key={h} className="text-left px-4 py-3 text-xs font-semibold text-slate-400 uppercase tracking-wide whitespace-nowrap">{h}</th>
@@ -433,7 +433,7 @@ export default function DeliveryTracking() {
                     const progress = serviceProgress(s.status);
                     const cfg      = SERVICE_STATUS_MAP[s.status] || SERVICE_STATUS_MAP.PENDING;
                     return (
-                      <tr key={s.serviceId} className="border-b border-slate-50 hover:bg-white/50 transition-colors">
+                      <tr key={s.serviceId} className="border-b border-slate-50 dark:border-slate-700/20 hover:bg-white/50 transition-colors">
                         <td className="px-4 py-3 text-xs font-mono text-blue-600 font-semibold">#{s.serviceId}</td>
                         <td className="px-4 py-3">
                           <p className="text-xs text-slate-700 max-w-[200px] truncate">{s.description || '—'}</p>

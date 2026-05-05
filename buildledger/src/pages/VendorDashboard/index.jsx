@@ -83,7 +83,7 @@ export default function VendorDashboard() {
         {vendor?.status === 'PENDING' && (
           <div className="relative mt-4 flex items-center gap-2.5 p-3 rounded-xl bg-amber-50 border border-amber-200">
             <Clock size={14} className="text-amber-600 shrink-0" />
-            <p className="text-xs text-amber-800">Your account is <strong>pending review</strong>. Upload required documents to speed up approval.</p>
+            <p className="text-xs text-amber-800 dark:text-amber-300">Your account is <strong>pending review</strong>. Upload required documents to speed up approval.</p>
           </div>
         )}
       </div>
@@ -122,7 +122,7 @@ export default function VendorDashboard() {
               ['Address', vendor?.address],
               ['Status', vendor?.status],
             ].map(([k, v]) => (
-              <div key={k} className="flex justify-between py-1.5 border-b border-slate-50">
+              <div key={k} className="flex justify-between py-1.5 border-b border-slate-50 dark:border-slate-700/30">
                 <span className="text-xs text-slate-400">{k}</span>
                 <span className="text-xs font-medium text-slate-700 max-w-[180px] text-right truncate">{v || '—'}</span>
               </div>
@@ -142,7 +142,7 @@ export default function VendorDashboard() {
             )}
           </div>
           {docs.length === 0 ? (
-            <label className="flex flex-col items-center justify-center gap-2 p-8 rounded-2xl cursor-pointer transition-all border-2 border-dashed border-slate-200 hover:border-blue-300 hover:bg-blue-50/30">
+            <label className="flex flex-col items-center justify-center gap-2 p-8 rounded-2xl cursor-pointer transition-all border-2 border-dashed border-slate-200 hover:border-blue-300 hover:bg-blue-50/30 dark:border-slate-600/50 dark:hover:border-blue-500/50 dark:hover:bg-blue-900/15">
               <Upload size={22} className="text-slate-300" />
               <p className="text-xs text-slate-400">No documents uploaded yet</p>
               <p className="text-xs text-blue-500 font-medium">Click to upload</p>
@@ -151,7 +151,7 @@ export default function VendorDashboard() {
           ) : (
             <div className="space-y-2">
               {docs.map((d, i) => (
-                <div key={i} className="flex items-center justify-between p-3 rounded-xl bg-white/50 border border-slate-100">
+                <div key={i} className="flex items-center justify-between p-3 rounded-xl bg-white/50 border border-slate-100 dark:border-slate-700/40">
                   <div className="flex items-center gap-2">
                     <FileText size={13} className="text-blue-500" />
                     <div>

@@ -48,7 +48,7 @@ function ContractTimeline({ status }) {
         const label = i === 2 ? closeLabel : s;
         const done  = i < activeIdx;
         const curr  = i === activeIdx;
-        let dotColor = 'bg-slate-200';
+        let dotColor = 'bg-slate-200 dark:bg-slate-700';
         if (done) dotColor = 'bg-blue-600';
         if (curr) {
           if (isTerminated) dotColor = 'bg-red-500';
@@ -74,7 +74,7 @@ function ContractTimeline({ status }) {
               <span className={`text-[10px] font-semibold whitespace-nowrap ${textColor}`}>{label}</span>
             </div>
             {i < TIMELINE_STAGES.length - 1 && (
-              <div className={`h-0.5 w-14 mb-5 mx-1 transition-all ${done ? 'bg-blue-500' : 'bg-slate-200'}`} />
+              <div className={`h-0.5 w-14 mb-5 mx-1 transition-all ${done ? 'bg-blue-500' : 'bg-slate-200 dark:bg-slate-700'}`} />
             )}
           </div>
         );
@@ -179,7 +179,7 @@ function ContractTermsTab({ contractId, isDraft, canManage }) {
         : terms.map((t, i) => (
           <div key={t.termId} className="flex items-start gap-3 p-3 rounded-xl"
             style={{ background: 'rgba(37,99,235,0.05)', border: '1px solid rgba(37,99,235,0.1)' }}>
-            <span className="w-5 h-5 rounded-full bg-blue-100 text-blue-600 text-[10px] font-bold flex items-center justify-center shrink-0 mt-0.5">
+            <span className="w-5 h-5 rounded-full bg-blue-100 text-blue-600 dark:bg-blue-900/40 dark:text-blue-400 text-[10px] font-bold flex items-center justify-center shrink-0 mt-0.5">
               {i + 1}
             </span>
             <div className="flex-1">
@@ -330,10 +330,10 @@ function ContractDetailModal({ contract, vendors, projects, onClose, onRefresh, 
         </div>
 
         {/* Tabs */}
-        <div className="flex gap-1 border-b border-slate-100">
+        <div className="flex gap-1 border-b border-slate-100 dark:border-slate-700/50">
           {['details', 'terms', 'actions'].map(t => (
             <button key={t} onClick={() => setTab(t)}
-              className={`px-4 py-2 text-xs font-semibold capitalize transition-all rounded-t-lg ${tab === t ? 'bg-blue-600 text-white' : 'text-slate-500 hover:text-slate-700'}`}>
+              className={`px-4 py-2 text-xs font-semibold capitalize transition-all rounded-t-lg ${tab === t ? 'bg-blue-600 text-white' : 'text-slate-500 hover:text-slate-700 dark:text-slate-400 dark:hover:text-slate-200'}`}>
               {t === 'terms' ? 'Contract Terms' : t === 'actions' ? 'Lifecycle Actions' : 'Details'}
             </button>
           ))}

@@ -1,6 +1,9 @@
 @import url('https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700;800&display=swap');
 @import "tailwindcss";
 
+/* Enable class-based dark mode for Tailwind v4 */
+@variant dark (&:where(.dark, .dark *));
+
 @theme {
   --font-sans: 'Inter', system-ui, sans-serif;
   --color-primary: #2563EB;
@@ -18,7 +21,10 @@ body {
   background: linear-gradient(135deg, #f8fafc 0%, #f1f5f9 40%, #e8f4f8 100%);
   min-height: 100vh;
   color: #0f172a;
+  transition: background 0.4s ease, color 0.3s ease;
 }
+
+/* ─── LIGHT MODE GLASS ─────────────────────────────────── */
 
 .glass {
   background: rgba(255,255,255,0.65);
@@ -37,7 +43,6 @@ body {
   border-radius: 16px;
   transition: all 0.25s ease;
 }
-
 .glass-card:hover {
   box-shadow: 0 8px 32px rgba(0,0,0,0.1), 0 2px 8px rgba(0,0,0,0.06);
   transform: translateY(-2px);
@@ -59,6 +64,49 @@ body {
   box-shadow: 0 2px 12px rgba(0,0,0,0.05);
 }
 
+/* ─── DARK MODE GLASS ──────────────────────────────────── */
+
+.dark body {
+  background: linear-gradient(135deg, #060b18 0%, #0a1228 55%, #06101e 100%);
+  color: #e2e8f0;
+}
+
+.dark .glass {
+  background: rgba(15, 23, 42, 0.72);
+  border-color: rgba(99, 102, 241, 0.12);
+  box-shadow: 0 4px 24px rgba(0,0,0,0.55), 0 1px 0 rgba(255,255,255,0.03);
+}
+
+.dark .glass-card {
+  background: rgba(13, 20, 42, 0.72);
+  border-color: rgba(99, 102, 241, 0.16);
+  box-shadow:
+    0 2px 16px rgba(0,0,0,0.5),
+    inset 0 1px 0 rgba(255,255,255,0.06),
+    0 0 0 1px rgba(59,130,246,0.07);
+}
+.dark .glass-card:hover {
+  box-shadow:
+    0 8px 32px rgba(0,0,0,0.65),
+    0 0 0 1px rgba(59,130,246,0.22),
+    0 2px 8px rgba(59,130,246,0.14);
+  transform: translateY(-2px);
+}
+
+.dark .glass-sidebar {
+  background: rgba(5, 9, 20, 0.98);
+  border-right-color: rgba(59, 130, 246, 0.1);
+  box-shadow: 4px 0 32px rgba(0,0,0,0.7), 1px 0 0 rgba(59,130,246,0.07);
+}
+
+.dark .glass-topbar {
+  background: rgba(5, 9, 20, 0.96);
+  border-bottom-color: rgba(59, 130, 246, 0.08);
+  box-shadow: 0 2px 16px rgba(0,0,0,0.55), 0 1px 0 rgba(59,130,246,0.06);
+}
+
+/* ─── BUTTONS ──────────────────────────────────────────── */
+
 .btn-primary {
   background: linear-gradient(135deg,#2563EB,#1d4ed8);
   color: white;
@@ -75,8 +123,15 @@ body {
   gap: 0.4rem;
 }
 .btn-primary:hover {
-  box-shadow: 0 4px 16px rgba(37,99,235,0.45);
+  box-shadow: 0 4px 16px rgba(37,99,235,0.5);
   transform: translateY(-1px);
+}
+.dark .btn-primary {
+  background: linear-gradient(135deg, #3b82f6, #2563eb);
+  box-shadow: 0 2px 12px rgba(59,130,246,0.4), 0 0 0 1px rgba(59,130,246,0.2);
+}
+.dark .btn-primary:hover {
+  box-shadow: 0 4px 20px rgba(59,130,246,0.55), 0 0 0 1px rgba(59,130,246,0.3);
 }
 
 .btn-secondary {
@@ -97,26 +152,41 @@ body {
   background: white;
   box-shadow: 0 2px 8px rgba(0,0,0,0.08);
 }
+.dark .btn-secondary {
+  background: rgba(30, 41, 59, 0.85);
+  color: #cbd5e1;
+  border-color: rgba(99, 102, 241, 0.2);
+}
+.dark .btn-secondary:hover {
+  background: rgba(51, 65, 85, 0.9);
+  box-shadow: 0 2px 8px rgba(0,0,0,0.4);
+  color: #e2e8f0;
+}
+
+/* ─── SCROLLBAR ────────────────────────────────────────── */
 
 .scrollbar-thin::-webkit-scrollbar { width: 4px; }
 .scrollbar-thin::-webkit-scrollbar-track { background: transparent; }
 .scrollbar-thin::-webkit-scrollbar-thumb { background: rgba(0,0,0,0.15); border-radius: 2px; }
+.dark .scrollbar-thin::-webkit-scrollbar-thumb { background: rgba(255,255,255,0.1); }
+
+/* ─── ANIMATIONS ───────────────────────────────────────── */
 
 @keyframes fadeIn {
   from { opacity:0; transform:translateY(8px); }
-  to { opacity:1; transform:translateY(0); }
+  to   { opacity:1; transform:translateY(0); }
 }
 .animate-fadeIn { animation: fadeIn 0.35s ease forwards; }
 
 @keyframes slideInRight {
   from { opacity:0; transform:translateX(20px); }
-  to { opacity:1; transform:translateX(0); }
+  to   { opacity:1; transform:translateX(0); }
 }
 .animate-slideInRight { animation: slideInRight 0.3s ease forwards; }
 
 @keyframes shimmer {
-  0% { background-position: -200% 0; }
-  100% { background-position: 200% 0; }
+  0%   { background-position: -200% 0; }
+  100% { background-position:  200% 0; }
 }
 .skeleton {
   background: linear-gradient(90deg, rgba(0,0,0,0.06) 25%, rgba(0,0,0,0.1) 50%, rgba(0,0,0,0.06) 75%);
@@ -124,3 +194,129 @@ body {
   animation: shimmer 1.5s infinite;
   border-radius: 8px;
 }
+.dark .skeleton {
+  background: linear-gradient(90deg, rgba(255,255,255,0.04) 25%, rgba(255,255,255,0.08) 50%, rgba(255,255,255,0.04) 75%);
+  background-size: 200% 100%;
+}
+
+/* ─── THEME TRANSITION ─────────────────────────────────── */
+.glass, .glass-card, .glass-sidebar, .glass-topbar,
+.btn-primary, .btn-secondary { transition: all 0.3s ease; }
+
+
+/* ═══════════════════════════════════════════════════════════
+   DARK MODE — GLOBAL UTILITY OVERRIDES
+   Targets the most common whitish-gray patterns used across
+   all pages so per-page dark: classes are minimal.
+   ═══════════════════════════════════════════════════════════ */
+
+/* ── Form inputs: inputs, selects, textareas ─────────────
+   !important beats Tailwind's bg-white/* !important overrides
+   ────────────────────────────────────────────────────────── */
+.dark input:not([type=checkbox]):not([type=radio]):not([type=range]):not([type=file]):not([type=color]),
+.dark select,
+.dark textarea {
+  background: rgba(3, 8, 26, 0.92) !important;
+  border-color: rgba(148, 163, 184, 0.32) !important;
+  color: #dde6f2 !important;
+  color-scheme: dark;
+  box-shadow: inset 0 1px 3px rgba(0,0,0,0.35) !important;
+}
+.dark input::placeholder,
+.dark textarea::placeholder { color: rgba(148, 163, 184, 0.42) !important; }
+.dark input:focus:not([type=checkbox]):not([type=radio]):not([type=range]),
+.dark select:focus,
+.dark textarea:focus {
+  border-color: rgba(59, 130, 246, 0.75) !important;
+  box-shadow: 0 0 0 3px rgba(59, 130, 246, 0.18), inset 0 1px 3px rgba(0,0,0,0.3) !important;
+  background: rgba(3, 8, 32, 0.97) !important;
+  outline: none !important;
+}
+.dark select option { background: #0d1528; color: #dde6f2; }
+
+/* Exception: search input inside topbar stays transparent (higher specificity wins) */
+.dark .glass-topbar input:not([type=checkbox]):not([type=radio]):not([type=range]):not([type=file]):not([type=color]) {
+  background: transparent !important;
+  border-color: transparent !important;
+  box-shadow: none !important;
+  color: #dde6f2 !important;
+}
+
+/* ── White-tinted backgrounds ───────────────────────────── */
+.dark .bg-white\/40  { background: rgba(14, 22, 45, 0.50) !important; }
+.dark .bg-white\/50  { background: rgba(14, 22, 45, 0.55) !important; }
+.dark .bg-white\/60  { background: rgba(14, 22, 45, 0.60) !important; }
+.dark .bg-white\/65  { background: rgba(14, 22, 45, 0.65) !important; }
+.dark .bg-white\/70  { background: rgba(14, 22, 45, 0.70) !important; }
+.dark .bg-white\/75  { background: rgba(14, 22, 45, 0.72) !important; }
+.dark .bg-white\/80  { background: rgba(14, 22, 45, 0.55) !important; }
+.dark .bg-white\/85  { background: rgba(14, 22, 45, 0.58) !important; }
+
+/* ── Slate-50/100 section headers & table heads ─────────── */
+.dark .bg-slate-50      { background: rgba(14, 22, 45, 0.50) !important; }
+.dark .bg-slate-50\/60  { background: rgba(7, 14, 32, 0.55) !important; }
+.dark .bg-slate-50\/80  { background: rgba(7, 14, 32, 0.65) !important; }
+.dark .bg-slate-100     { background: rgba(20, 30, 60, 0.65) !important; }
+
+/* ── White/Slate borders → visible dark ─────────────────── */
+.dark .border-white\/80  { border-color: rgba(148, 163, 184, 0.18) !important; }
+.dark .border-white\/85  { border-color: rgba(148, 163, 184, 0.18) !important; }
+.dark .border-white\/60  { border-color: rgba(148, 163, 184, 0.12) !important; }
+.dark .border-white\/90  { border-color: rgba(148, 163, 184, 0.20) !important; }
+.dark .border-slate-50   { border-color: rgba(148, 163, 184, 0.10) !important; }
+.dark .border-slate-100  { border-color: rgba(148, 163, 184, 0.14) !important; }
+.dark .border-slate-200  { border-color: rgba(148, 163, 184, 0.22) !important; }
+.dark .border-green-200  { border-color: rgba(74,  222, 128, 0.30) !important; }
+.dark .border-amber-200  { border-color: rgba(251, 191, 36,  0.30) !important; }
+.dark .border-red-200    { border-color: rgba(248, 113, 113, 0.30) !important; }
+.dark .border-blue-200   { border-color: rgba(96,  165, 250, 0.30) !important; }
+
+/* ── Hover backgrounds ──────────────────────────────────── */
+.dark .hover\:bg-white\/50:hover  { background: rgba(30, 41, 70, 0.40) !important; }
+.dark .hover\:bg-white:hover      { background: rgba(30, 41, 70, 0.80) !important; }
+.dark .hover\:bg-slate-100:hover  { background: rgba(20, 30, 60, 0.65) !important; }
+.dark .hover\:bg-red-50:hover     { background: rgba(153, 27, 27, 0.18) !important; }
+.dark .hover\:bg-green-100:hover  { background: rgba(20,  83, 45, 0.28) !important; }
+.dark .hover\:bg-red-100:hover    { background: rgba(153, 27, 27, 0.28) !important; }
+.dark .hover\:bg-blue-50\/40:hover { background: rgba(30, 64, 175, 0.18) !important; }
+
+/* ── Status / semantic light backgrounds ────────────────── */
+.dark .bg-green-50  { background: rgba(20, 83, 45,   0.22) !important; }
+.dark .bg-amber-50  { background: rgba(120, 53, 15,  0.22) !important; }
+.dark .bg-red-50    { background: rgba(127, 29, 29,  0.22) !important; }
+.dark .bg-blue-50   { background: rgba(30,  64, 175, 0.18) !important; }
+.dark .bg-teal-50   { background: rgba(15, 118, 110, 0.18) !important; }
+.dark .bg-purple-50 { background: rgba(88,  28, 135, 0.18) !important; }
+.dark .bg-green-100 { background: rgba(20, 83, 45,   0.28) !important; }
+.dark .bg-red-100   { background: rgba(127, 29, 29,  0.28) !important; }
+
+/* bg-blue-50/40 (drag zone hover) */
+.dark .bg-blue-50\/40 { background: rgba(30, 64, 175, 0.14) !important; }
+
+/* ── Status text → vibrant in dark ─────────────────────── */
+.dark .text-green-700 { color: #4ade80 !important; }
+.dark .text-green-600 { color: #4ade80 !important; }
+.dark .text-green-500 { color: #22c55e !important; }
+.dark .text-amber-700 { color: #fbbf24 !important; }
+.dark .text-amber-600 { color: #fbbf24 !important; }
+.dark .text-amber-500 { color: #f59e0b !important; }
+.dark .text-red-700   { color: #f87171 !important; }
+.dark .text-red-600   { color: #f87171 !important; }
+.dark .text-red-500   { color: #ef4444 !important; }
+.dark .text-teal-700  { color: #2dd4bf !important; }
+.dark .text-teal-600  { color: #2dd4bf !important; }
+.dark .text-blue-700  { color: #93c5fd !important; }
+.dark .text-blue-600  { color: #60a5fa !important; }
+.dark .text-blue-500  { color: #3b82f6 !important; }
+.dark .text-indigo-600 { color: #a5b4fc !important; }
+.dark .text-purple-600 { color: #c084fc !important; }
+
+/* ── Body text → full readable hierarchy in dark ────────── */
+.dark .text-slate-800 { color: #f1f5f9 !important; }  /* headings    — near-white     */
+.dark .text-slate-700 { color: #e2e8f0 !important; }  /* prominent   — very light     */
+.dark .text-slate-600 { color: #c8d8e8 !important; }  /* body text   — light gray     */
+.dark .text-slate-500 { color: #9bb5c8 !important; }  /* secondary   — medium-light   */
+.dark .text-slate-400 { color: #8aa4b6 !important; }  /* muted/labels— readable, dim  */
+
+/* ── Selected row (blue-50/40 active state) ─────────────── */
+.dark .bg-blue-50\/40 { background: rgba(37, 99, 235, 0.16) !important; }
