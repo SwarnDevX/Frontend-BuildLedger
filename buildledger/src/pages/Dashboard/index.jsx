@@ -191,7 +191,7 @@ export default function Dashboard() {
             </div>
           </div>
 
-          <div className="glass-card p-5">
+          {/* <div className="glass-card p-5">
             <div className="flex items-center justify-between mb-3">
               <h2 className="text-sm font-semibold text-slate-700 dark:text-slate-200">Alerts</h2>
               <span className="w-5 h-5 rounded-full bg-red-500 text-white text-[10px] font-bold flex items-center justify-center">
@@ -219,7 +219,7 @@ export default function Dashboard() {
                 })}
               </div>
             )}
-          </div>
+          </div> */}
         </div>
       </div>
     </div>
