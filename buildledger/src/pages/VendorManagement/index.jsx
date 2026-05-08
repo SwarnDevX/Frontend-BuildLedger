@@ -15,7 +15,6 @@ import {
   uploadVendorDocument, verifyDocument, downloadVendorDocument, updateVendor,
 } from '../../api/vendors';
 import { getVendorPageSummary } from '../../api/reports';
-import { createInternalVendorUser } from '../../api/users';
 import { useAuth } from '../../context/AuthContext';
 import toast from 'react-hot-toast';
 
@@ -161,21 +160,6 @@ function VendorProfilePanel({ vendor, onClose, refreshVendors, refreshPending, o
       });
       const nextVendorStatus = status === 'APPROVED' ? 'ACTIVE' : 'REJECTED';
       try { await updateVendor(vendor.vendorId, { status: nextVendorStatus }); } catch { /* already set */ }
-      if (status === 'APPROVED' && ['ADMIN', 'PROJECT_MANAGER'].includes(user?.role) && vendor?.status !== 'ACTIVE') {
-        const encodedPassword = vendor?.encodedPassword || vendor?.passwordEncoded || vendor?.passwordHash;
-        if (vendor?.username && encodedPassword && vendor?.name) {
-          try {
-            await createInternalVendorUser({ username: vendor.username, encodedPassword, name: vendor.name, email: vendor.email, phone: vendor.phone });
-            toast.success('Vendor account activated');
-          } catch (accountErr) {
-            const msg = accountErr.response?.data?.message;
-            if (msg && /exist|already/i.test(msg)) toast('Vendor account already exists');
-            else toast.error(msg || 'Document approved, but vendor account creation failed');
-          }
-        } else {
-          toast('Document approved. Vendor account payload incomplete; skipped creation.');
-        }
-      }
       onVendorStatusChange?.(vendor.vendorId, nextVendorStatus);
       toast.success(status === 'APPROVED' ? 'Document accepted' : 'Document rejected');
       fetchDocs(); refreshVendors?.(); refreshPending?.();
