@@ -14,6 +14,7 @@ import { getCompliancePageSummary } from '../../api/reports';
 import { getAllCompliance } from '../../api/compliance';
 import { getAllAudits } from '../../api/audits';
 import { getDeliveriesByStatus } from '../../api/deliveries';
+import { getServicesByStatus } from '../../api/services';
 import toast from 'react-hot-toast';
 
 const BREAKDOWN = [
@@ -30,29 +31,39 @@ export default function ComplianceDashboard() {
   const [compliance,        setCompliance]        = useState([]);
   const [audits,            setAudits]            = useState([]);
   const [markedDeliveries,  setMarkedDeliveries]  = useState([]);
+  const [completedServices, setCompletedServices] = useState([]);
 
   const fetchAll = async () => {
     setLoading(true);
     try {
-      const [s, c, a, md] = await Promise.allSettled([
+      const [s, c, a, md, cs] = await Promise.allSettled([
         getCompliancePageSummary(),
         getAllCompliance(),
         getAllAudits(),
         getDeliveriesByStatus('MARKED_DELIVERED'),
+        getServicesByStatus('COMPLETED'),
       ]);
       const allCompliance = c.status === 'fulfilled' ? (c.value.data?.data || []) : [];
       const allMarkDel    = md.status === 'fulfilled' ? (md.value.data?.data || []) : [];
+      const allCompleted  = cs.status === 'fulfilled' ? (cs.value.data?.data || []) : [];
 
       setSummary(s.status === 'fulfilled' ? s.value.data : null);
       setCompliance(allCompliance);
       setAudits(a.status === 'fulfilled' ? (a.value.data?.data || []) : []);
 
-      const existingCheckIds = new Set(
+      const existingDeliveryCheckIds = new Set(
         allCompliance
           .filter(cr => cr.type === 'DELIVERY_CHECK' && ['PENDING', 'UNDER_REVIEW', 'PASSED'].includes(cr.status))
           .map(cr => Number(cr.referenceId ?? cr.contractId))
       );
-      setMarkedDeliveries(allMarkDel.filter(d => !existingCheckIds.has(d.deliveryId)));
+      setMarkedDeliveries(allMarkDel.filter(d => !existingDeliveryCheckIds.has(d.deliveryId)));
+
+      const existingServiceCheckIds = new Set(
+        allCompliance
+          .filter(cr => cr.type === 'SERVICE_CHECK' && ['PENDING', 'UNDER_REVIEW', 'PASSED'].includes(cr.status))
+          .map(cr => Number(cr.referenceId ?? cr.contractId))
+      );
+      setCompletedServices(allCompleted.filter(sv => !existingServiceCheckIds.has(sv.serviceId)));
     } catch {
       toast.error('Failed to load dashboard data');
     } finally {
@@ -153,6 +164,64 @@ export default function ComplianceDashboard() {
                       {d.contractId && (
                         <p className="text-[10px] text-slate-400 dark:text-slate-500">
                           Contract #{d.contractId}
+                        </p>
+                      )}
+                    </div>
+                    <button
+                      onClick={() => navigate('/compliance')}
+                      className="text-[10px] font-semibold text-amber-700 dark:text-amber-400 hover:underline flex items-center gap-0.5"
+                    >
+                      Create Check <ArrowRight size={9} />
+                    </button>
+                  </div>
+                ))}
+              </div>
+            )}
+          </div>
+
+          {/* Services awaiting check */}
+          <div className={`glass-card p-5 border-l-4 ${completedServices.length > 0 ? 'border-amber-400' : 'border-green-400'}`}>
+            <div className="flex items-center justify-between mb-3">
+              <div className="flex items-center gap-2">
+                {completedServices.length > 0
+                  ? <AlertTriangle size={15} className="text-amber-500 shrink-0" />
+                  : <CheckCircle2 size={15} className="text-green-500 shrink-0" />
+                }
+                <h2 className="text-sm font-semibold text-slate-700 dark:text-slate-200">
+                  Services Awaiting Compliance Check
+                </h2>
+                {completedServices.length > 0 && (
+                  <span className="ml-1 w-5 h-5 rounded-full bg-amber-500 text-white text-[10px] font-bold flex items-center justify-center shrink-0">
+                    {completedServices.length}
+                  </span>
+                )}
+              </div>
+              <button
+                onClick={() => navigate('/compliance')}
+                className="text-xs text-blue-500 hover:underline font-medium flex items-center gap-1"
+              >
+                Go to Compliance <ArrowRight size={11} />
+              </button>
+            </div>
+
+            {completedServices.length === 0 ? (
+              <p className="text-xs text-green-600 dark:text-green-400">
+                All completed services have compliance checks in place.
+              </p>
+            ) : (
+              <div className="space-y-2 max-h-48 overflow-y-auto pr-1">
+                {completedServices.map(sv => (
+                  <div
+                    key={sv.serviceId}
+                    className="flex items-center justify-between px-3 py-2 rounded-xl bg-amber-50 dark:bg-amber-900/15 border border-amber-100 dark:border-amber-700/30"
+                  >
+                    <div>
+                      <p className="text-xs font-semibold text-slate-700 dark:text-slate-200">
+                        Service #{sv.serviceId}
+                      </p>
+                      {sv.contractId && (
+                        <p className="text-[10px] text-slate-400 dark:text-slate-500">
+                          Contract #{sv.contractId}
                         </p>
                       )}
                     </div>

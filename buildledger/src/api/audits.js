@@ -10,5 +10,7 @@ export const updateAuditStatus = (id, status, findings) => {
   if (findings) params.append('findings', findings);
   return api.patch(`/audits/${id}/status?${params.toString()}`);
 };
-export const getAuditsByOfficer = (officerId)  => api.get(`/audits/officer/${officerId}`);
+export const getAuditsByOfficer          = (officerId)          => api.get(`/audits/officer/${officerId}`);
+export const getAuditLogsByComplianceRecord = (complianceRecordId) => api.get(`/audits/compliance/${complianceRecordId}`);
+export const getAuditLogById             = (logId)              => api.get(`/audits/logs/${logId}`);
 

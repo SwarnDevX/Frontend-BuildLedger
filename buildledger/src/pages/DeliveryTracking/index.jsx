@@ -50,23 +50,26 @@ const SERVICE_STATUS_MAP = {
   IN_PROGRESS: { color: '#2563EB', label: 'In Progress' },
   COMPLETED:   { color: '#14B8A6', label: 'Completed' },
   VERIFIED:    { color: '#22C55E', label: 'Verified' },
+  UNVERIFIED:  { color: '#EF4444', label: 'Unverified' },
 };
 
 const SERVICE_TRANSITIONS = {
   PENDING:     ['IN_PROGRESS'],
   IN_PROGRESS: ['COMPLETED'],
-  COMPLETED:   ['VERIFIED'],
+  COMPLETED:   ['VERIFIED', 'UNVERIFIED'],
   VERIFIED:    [],
+  UNVERIFIED:  [],
 };
 
 const SERVICE_ROLE_RULES = {
   IN_PROGRESS: ['VENDOR', 'ADMIN'],
   COMPLETED:   ['VENDOR', 'ADMIN'],
   VERIFIED:    ['PROJECT_MANAGER', 'ADMIN'],
+  UNVERIFIED:  ['PROJECT_MANAGER', 'ADMIN'],
 };
 
 function serviceProgress(status) {
-  return { PENDING: 10, IN_PROGRESS: 40, COMPLETED: 75, VERIFIED: 100 }[status] ?? 10;
+  return { PENDING: 10, IN_PROGRESS: 40, COMPLETED: 75, VERIFIED: 100, UNVERIFIED: 100 }[status] ?? 10;
 }
 
 function contractLabel(contracts, contractId) {

@@ -9,7 +9,6 @@ import {
   Table, TableHead, TableHeader, TableBody, TableRow, TableCell,
 } from '../../components/ui';
 import { getAllInvoices, createInvoice, approveInvoice, rejectInvoice } from '../../api/invoices';
-import { checkCompliance } from '../../api/compliance';
 import { getAllPayments, processPayment, updatePaymentStatus } from '../../api/payments';
 import { getAllContracts } from '../../api/contracts';
 import { getInvoicePageSummary } from '../../api/reports';
@@ -135,15 +134,6 @@ export default function InvoicePayment() {
   useEffect(() => { fetchData(); }, []);
 
   const handleApprove = async (id) => {
-    try {
-      await checkCompliance(id, 'INVOICE_CHECK');
-    } catch {
-      toast.error(
-        `Invoice #${id} cannot be approved yet — create an INVOICE_CHECK compliance record (Reference ID: ${id}) in Compliance & Audit and move it to PASSED first.`,
-        { duration: 6000 }
-      );
-      return;
-    }
     try { await approveInvoice(id); toast.success('Invoice approved'); fetchData(); }
     catch (err) { showErrors(err); }
   };
