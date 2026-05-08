@@ -1,13 +1,10 @@
 import { useState, useEffect } from 'react';
 import { AreaChart, Area, XAxis, YAxis, Tooltip, ResponsiveContainer, CartesianGrid } from 'recharts';
 import { BarChart, Bar, Cell } from 'recharts';
-import { FileText, Users, Truck, CreditCard, Plus, UserPlus, Bell, Clock, AlertTriangle, CheckCircle2, Loader2, RefreshCw } from 'lucide-react';
+import { FileText, Users, Truck, CreditCard, Plus, UserPlus, Clock, AlertTriangle, CheckCircle2, Loader2, RefreshCw } from 'lucide-react';
 import StatCard from '../../components/ui/StatCard';
 import Badge from '../../components/ui/Badge';
-import { getAllContracts } from '../../api/contracts';
-import { getAllVendors } from '../../api/vendors';
-import { getAllDeliveries } from '../../api/deliveries';
-import { getAllInvoices } from '../../api/invoices';
+import { getDashboardSummary } from '../../api/reports';
 import { useNavigate } from 'react-router-dom';
 import { useTheme } from '../../context/ThemeContext';
 
@@ -28,80 +25,40 @@ const CustomTooltip = ({ active, payload, label }) => {
 const alertIcons  = { warning: AlertTriangle, error: AlertTriangle, info: Clock, success: CheckCircle2 };
 const alertColors = { warning: 'text-amber-500', error: 'text-red-500', info: 'text-blue-500', success: 'text-green-500' };
 
-function deriveAlerts(invoices, deliveries) {
-  const alerts = [];
-  const now = new Date();
-  invoices.forEach(inv => {
-    const due = inv.dueDate ? new Date(inv.dueDate) : null;
-    if (inv.status === 'PENDING' && due && due < now) {
-      alerts.push({ id: `inv-${inv.invoiceId}`, severity: 'error', message: `Invoice #${inv.invoiceId} is overdue`, time: inv.dueDate });
-    }
-  });
-  deliveries.forEach(del => {
-    if (del.status === 'PENDING') {
-      alerts.push({ id: `del-${del.deliveryId}`, severity: 'warning', message: `Delivery #${del.deliveryId} is pending`, time: del.scheduledDate || del.expectedDate || '—' });
-    }
-  });
-  return alerts.slice(0, 4);
-}
-
 export default function Dashboard() {
   const navigate = useNavigate();
   const { isDark } = useTheme();
-  const [contracts, setContracts]   = useState([]);
-  const [vendors, setVendors]       = useState([]);
-  const [deliveries, setDeliveries] = useState([]);
-  const [invoices, setInvoices]     = useState([]);
-  const [loading, setLoading]       = useState(true);
+  const [summary, setSummary] = useState(null);
+  const [loading, setLoading] = useState(true);
 
   const fetchAll = async () => {
     setLoading(true);
     try {
-      const [c, v, d, i] = await Promise.allSettled([
-        getAllContracts(), getAllVendors(), getAllDeliveries(), getAllInvoices(),
-      ]);
-      setContracts(c.status === 'fulfilled' ? (c.value.data?.data || []) : []);
-      setVendors(v.status === 'fulfilled'   ? (v.value.data?.data || []) : []);
-      setDeliveries(d.status === 'fulfilled'? (d.value.data?.data || []) : []);
-      setInvoices(i.status === 'fulfilled'  ? (i.value.data?.data || []) : []);
+      const res = await getDashboardSummary();
+      setSummary(res.data);
+    } catch (e) {
+      console.error('Dashboard summary failed:', e);
     } finally { setLoading(false); }
   };
 
   useEffect(() => { fetchAll(); }, []);
 
-  const activeVendors    = vendors.filter(v => v.status === 'ACTIVE').length;
-  const pendingDeliveries= deliveries.filter(d => d.status === 'PENDING').length;
-  const outstandingAmt   = invoices.filter(i => i.status !== 'PAID').reduce((s, i) => s + (i.amount || 0), 0);
-
   const kpiData = [
-    { label: 'Total Contracts',      value: String(contracts.length),               color: '#3b82f6', bg: 'rgba(59,130,246,0.1)'  },
-    { label: 'Active Vendors',       value: String(activeVendors),                  color: '#14B8A6', bg: 'rgba(20,184,166,0.1)'  },
-    { label: 'Pending Deliveries',   value: String(pendingDeliveries),              color: '#F59E0B', bg: 'rgba(245,158,11,0.1)'  },
-    { label: 'Outstanding Payments', value: `$${(outstandingAmt / 1000).toFixed(0)}K`, color: '#EF4444', bg: 'rgba(239,68,68,0.1)' },
+    { label: 'Total Contracts',      value: String(summary?.totalContracts ?? 0),                                         color: '#3b82f6', bg: 'rgba(59,130,246,0.1)'  },
+    { label: 'Active Vendors',       value: String(summary?.activeVendors ?? 0),                                          color: '#14B8A6', bg: 'rgba(20,184,166,0.1)'  },
+    { label: 'Pending Deliveries',   value: String(summary?.pendingDeliveries ?? 0),                                      color: '#F59E0B', bg: 'rgba(245,158,11,0.1)'  },
+    { label: 'Outstanding Payments', value: `$${((summary?.outstandingPayments ?? 0) / 1000).toFixed(0)}K`,              color: '#EF4444', bg: 'rgba(239,68,68,0.1)'   },
   ];
   const kpiIcons = [FileText, Users, Truck, CreditCard];
 
-  const months = ['Jan','Feb','Mar','Apr','May','Jun','Jul','Aug','Sep','Oct','Nov','Dec'];
-  const trendMap = {};
-  contracts.forEach(c => {
-    const d = c.createdAt || c.startDate;
-    if (!d) return;
-    const m = months[new Date(d).getMonth()];
-    trendMap[m] = (trendMap[m] || 0) + (c.value || c.contractValue || 0);
-  });
-  const contractTrendData = months.map(m => ({ month: m, value: trendMap[m] || 0 }));
+  const contractTrendData = summary?.contractTrendData ?? [];
+  const vendorStatusData  = summary?.vendorStatusData  ?? [];
+  const recentContracts   = summary?.recentContracts   ?? [];
+  const alerts            = summary?.alerts            ?? [];
 
-  const vendorPerformanceData = vendors.slice(0, 6).map(v => ({
-    name:  (v.name || 'Vendor').slice(0, 10),
-    score: v.status === 'ACTIVE' ? 85 : v.status === 'PENDING' ? 50 : 30,
-  }));
-
-  const recentContracts = contracts.slice(0, 6);
-  const alerts = deriveAlerts(invoices, deliveries);
-
-  const axisColor    = isDark ? '#8aa4b6' : '#94a3b8';
-  const gridColor    = isDark ? 'rgba(255,255,255,0.07)' : 'rgba(0,0,0,0.05)';
-  const barCursor    = isDark ? 'rgba(255,255,255,0.05)' : 'rgba(0,0,0,0.04)';
+  const axisColor = isDark ? '#8aa4b6' : '#94a3b8';
+  const gridColor = isDark ? 'rgba(255,255,255,0.07)' : 'rgba(0,0,0,0.05)';
+  const barCursor = isDark ? 'rgba(255,255,255,0.05)' : 'rgba(0,0,0,0.04)';
 
   if (loading) return (
     <div className="flex items-center justify-center h-64 gap-2 text-slate-400">
@@ -157,11 +114,11 @@ export default function Dashboard() {
             <h2 className="text-sm font-semibold text-slate-700 dark:text-slate-200">Vendor Status Overview</h2>
             <p className="text-xs text-slate-400 dark:text-slate-500">Active vendors snapshot</p>
           </div>
-          {vendorPerformanceData.length === 0 ? (
+          {vendorStatusData.length === 0 ? (
             <div className="flex items-center justify-center h-48 text-slate-400 text-xs">No vendor data</div>
           ) : (
             <ResponsiveContainer width="100%" height={200}>
-              <BarChart data={vendorPerformanceData} layout="vertical" margin={{ left: 0 }}>
+              <BarChart data={vendorStatusData} layout="vertical" margin={{ left: 0 }}>
                 <XAxis type="number" domain={[0, 100]} tick={{ fontSize: 10, fill: axisColor }} axisLine={false} tickLine={false} />
                 <YAxis type="category" dataKey="name" tick={{ fontSize: 10, fill: axisColor }} axisLine={false} tickLine={false} width={70} />
                 <Tooltip
@@ -174,7 +131,7 @@ export default function Dashboard() {
                   ) : null}
                 />
                 <Bar dataKey="score" radius={[0, 6, 6, 0]}>
-                  {vendorPerformanceData.map((e, i) => (
+                  {vendorStatusData.map((e, i) => (
                     <Cell key={i} fill={COLORS_PERF[i % COLORS_PERF.length]} />
                   ))}
                 </Bar>

@@ -9,7 +9,10 @@ import {
 } from '../../components/ui';
 import { getAllDeliveries, createDelivery, updateDeliveryStatus } from '../../api/deliveries';
 import { getAllServices, createService, updateServiceStatus } from '../../api/services';
-import { getAllContracts } from '../../api/contracts';
+import { getAllContracts, getContractsByVendor } from '../../api/contracts';
+import { getAllVendors } from '../../api/vendors';
+import { getDeliveryPageSummary } from '../../api/reports';
+import { checkCompliance } from '../../api/compliance';
 import { useAuth } from '../../context/AuthContext';
 import toast from 'react-hot-toast';
 
@@ -141,9 +144,10 @@ const SERVICE_FILTER_OPTIONS = ['All', ...Object.keys(SERVICE_STATUS_MAP)].map(s
 export default function DeliveryTracking() {
   const { user } = useAuth();
   const [tab, setTab]               = useState('deliveries');
-  const [deliveries, setDeliveries] = useState([]);
-  const [services, setServices]     = useState([]);
-  const [contracts, setContracts]   = useState([]);
+  const [deliveries, setDeliveries]       = useState([]);
+  const [services, setServices]           = useState([]);
+  const [contracts, setContracts]         = useState([]);
+  const [deliverySummary, setDeliverySummary] = useState(null);
   const [loading, setLoading]       = useState(true);
   const [filter, setFilter]         = useState('All');
   const [svcFilter, setSvcFilter]   = useState('All');
@@ -155,6 +159,7 @@ export default function DeliveryTracking() {
   const [updating, setUpdating]     = useState({});
   const [dErrors, setDErrors] = useState({});
   const [sErrors, setSErrors] = useState({});
+  const [complianceBlock, setComplianceBlock] = useState(null);
 
   const canCreate = ['ADMIN', 'VENDOR'].includes(user?.role);
   const today     = new Date().toISOString().split('T')[0];
@@ -162,10 +167,38 @@ export default function DeliveryTracking() {
   const fetchData = async () => {
     setLoading(true);
     try {
-      const [d, s, c] = await Promise.allSettled([getAllDeliveries(), getAllServices(), getAllContracts()]);
-      setDeliveries(d.status === 'fulfilled' ? (d.value.data?.data || []) : []);
-      setServices(s.status === 'fulfilled'   ? (s.value.data?.data || []) : []);
-      setContracts(c.status === 'fulfilled'  ? (c.value.data?.data || []) : []);
+      const [d, s, c, sum] = await Promise.allSettled([
+        getAllDeliveries(), getAllServices(), getAllContracts(), getDeliveryPageSummary(),
+      ]);
+      const allDeliveries = d.status === 'fulfilled' ? (d.value.data?.data || []) : [];
+      const allServices   = s.status === 'fulfilled' ? (s.value.data?.data || []) : [];
+      const allContracts  = c.status === 'fulfilled' ? (c.value.data?.data || []) : [];
+      setDeliverySummary(sum.status === 'fulfilled' ? sum.value.data : null);
+
+      if (user?.role === 'VENDOR') {
+        // Scope everything to this vendor's contracts only
+        try {
+          const vendorRes    = await getAllVendors();
+          const allVendors   = vendorRes.data?.data || [];
+          const mine         = allVendors.find(v => v.userId === user.userId || v.username === user.username);
+          if (mine) {
+            const vcRes        = await getContractsByVendor(mine.vendorId);
+            const myContracts  = vcRes.data?.data || [];
+            const myContractIds = new Set(myContracts.map(co => co.contractId));
+            setContracts(myContracts);
+            setDeliveries(allDeliveries.filter(de => myContractIds.has(de.contractId)));
+            setServices(allServices.filter(sv => myContractIds.has(sv.contractId)));
+          } else {
+            setContracts([]); setDeliveries([]); setServices([]);
+          }
+        } catch {
+          setContracts([]); setDeliveries([]); setServices([]);
+        }
+      } else {
+        setDeliveries(allDeliveries);
+        setServices(allServices);
+        setContracts(allContracts);
+      }
     } catch { toast.error('Failed to load data'); }
     finally { setLoading(false); }
   };
@@ -201,6 +234,18 @@ export default function DeliveryTracking() {
 
   const handleDeliveryTransition = async (deliveryId, nextStatus) => {
     setUpdating(p => ({ ...p, [`d-${deliveryId}`]: true }));
+    if (nextStatus === 'ACCEPTED') {
+      try {
+        await checkCompliance(deliveryId, 'DELIVERY_CHECK');
+      } catch {
+        setComplianceBlock({
+          message: `Delivery #${deliveryId} cannot be accepted yet.`,
+          hint: `A DELIVERY_CHECK compliance record must exist for Reference ID ${deliveryId} with status PASSED or WAIVED.\n\nGo to Compliance & Audit → Create Record → Type: DELIVERY_CHECK → Reference ID: ${deliveryId}, then move it to PASSED.`,
+        });
+        setUpdating(p => ({ ...p, [`d-${deliveryId}`]: false }));
+        return;
+      }
+    }
     try {
       await updateDeliveryStatus(deliveryId, nextStatus);
       toast.success(`Delivery → ${DELIVERY_STATUS_MAP[nextStatus]?.label || nextStatus}`);
@@ -235,6 +280,18 @@ export default function DeliveryTracking() {
 
   const handleServiceTransition = async (serviceId, nextStatus) => {
     setUpdating(p => ({ ...p, [`s-${serviceId}`]: true }));
+    if (nextStatus === 'VERIFIED') {
+      try {
+        await checkCompliance(serviceId, 'SERVICE_CHECK');
+      } catch {
+        setComplianceBlock({
+          message: `Service #${serviceId} cannot be verified yet.`,
+          hint: `A SERVICE_CHECK compliance record must exist for Reference ID ${serviceId} with status PASSED or WAIVED.\n\nGo to Compliance & Audit → Create Record → Type: SERVICE_CHECK → Reference ID: ${serviceId}, then move it to PASSED.`,
+        });
+        setUpdating(p => ({ ...p, [`s-${serviceId}`]: false }));
+        return;
+      }
+    }
     try {
       await updateServiceStatus(serviceId, nextStatus);
       toast.success(`Service → ${SERVICE_STATUS_MAP[nextStatus]?.label || nextStatus}`);
@@ -296,7 +353,7 @@ export default function DeliveryTracking() {
           <div className="grid grid-cols-2 sm:grid-cols-5 gap-3">
             {Object.entries(DELIVERY_STATUS_MAP).map(([s, cfg]) => {
               const Icon = cfg.icon;
-              const count = deliveries.filter(d => d.status === s).length;
+              const count = deliverySummary?.deliveryStatusCounts?.[s] ?? 0;
               return (
                 <div key={s} className="glass-card p-4 flex items-center gap-3">
                   <div className="w-9 h-9 rounded-xl flex items-center justify-center" style={{ background: `${cfg.color}18` }}>
@@ -376,7 +433,7 @@ export default function DeliveryTracking() {
         <>
           <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
             {Object.entries(SERVICE_STATUS_MAP).map(([s, cfg]) => {
-              const count = services.filter(x => x.status === s).length;
+              const count = deliverySummary?.serviceStatusCounts?.[s] ?? 0;
               return (
                 <div key={s} className="glass-card p-4 flex items-center gap-3">
                   <div className="w-9 h-9 rounded-xl flex items-center justify-center" style={{ background: `${cfg.color}18` }}>
@@ -454,7 +511,7 @@ export default function DeliveryTracking() {
             value={formD.contractId}
             onChange={e => { setD('contractId')(e); if (e.target.value) setDErrors(p => ({ ...p, contractId: '' })); }}
             error={dErrors.contractId}
-            hint={contracts.filter(c => c.status === 'ACTIVE').length === 0 ? 'No active contracts. Activate a contract first.' : ''}
+            hint={contracts.filter(c => c.status === 'ACTIVE').length === 0 ? 'No active contracts. A vendor must accept a contract first.' : ''}
           >
             <option value="">Select contract…</option>
             {contracts.filter(c => c.status === 'ACTIVE').map(c => (
@@ -544,6 +601,20 @@ export default function DeliveryTracking() {
           <div className="flex gap-2 justify-end pt-2">
             <Button variant="secondary" size="xs" onClick={() => { setShowCreateS(false); setFormS(EMPTY_SERVICE); setSErrors({}); }}>Cancel</Button>
             <Button variant="primary" size="xs" onClick={handleCreateService} loading={saving}>Create Service</Button>
+          </div>
+        </div>
+      </Modal>
+
+      {/* Compliance Gate Modal */}
+      <Modal open={complianceBlock !== null} onClose={() => setComplianceBlock(null)} title="Compliance Check Required">
+        <div className="space-y-3">
+          <div className="flex items-start gap-2.5 p-3 rounded-xl bg-red-50 dark:bg-red-900/15 border border-red-200 dark:border-red-700/40">
+            <span className="text-red-500 mt-0.5 shrink-0">✕</span>
+            <p className="text-sm font-semibold text-red-700 dark:text-red-400">{complianceBlock?.message}</p>
+          </div>
+          <p className="text-xs text-slate-500 dark:text-slate-400 whitespace-pre-line leading-relaxed">{complianceBlock?.hint}</p>
+          <div className="flex justify-end pt-2">
+            <Button variant="secondary" size="xs" onClick={() => setComplianceBlock(null)}>Close</Button>
           </div>
         </div>
       </Modal>

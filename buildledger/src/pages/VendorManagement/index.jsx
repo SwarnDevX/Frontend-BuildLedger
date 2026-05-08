@@ -12,8 +12,9 @@ import {
 } from '../../components/ui';
 import {
   getAllVendors, deleteVendor, getVendorDocuments,
-  uploadVendorDocument, verifyDocument, getPendingDocuments, downloadVendorDocument, updateVendor,
+  uploadVendorDocument, verifyDocument, downloadVendorDocument, updateVendor,
 } from '../../api/vendors';
+import { getVendorPageSummary } from '../../api/reports';
 import { createInternalVendorUser } from '../../api/users';
 import { useAuth } from '../../context/AuthContext';
 import toast from 'react-hot-toast';
@@ -116,6 +117,8 @@ function VendorProfilePanel({ vendor, onClose, refreshVendors, refreshPending, o
   const [selectedDocType, setSelectedDocType] = useState('PAN_CARD');
   const [dragOver, setDragOver]       = useState(false);
   const [reviewing, setReviewing]     = useState({});
+  const [pendingRejectDocId, setPendingRejectDocId] = useState(null);
+  const [rejectRemarks,      setRejectRemarks]      = useState('');
   const fileInputRef                  = useRef(null);
 
   const canReview = ['ADMIN', 'PROJECT_MANAGER'].includes(user?.role);
@@ -147,13 +150,13 @@ function VendorProfilePanel({ vendor, onClose, refreshVendors, refreshPending, o
   const handleFileInput = (e) => handleUpload(e.target.files?.[0]);
   const handleDrop = (e) => { e.preventDefault(); setDragOver(false); handleUpload(e.dataTransfer.files?.[0]); };
 
-  const handleVerify = async (docId, status) => {
+  const handleVerify = async (docId, status, reviewRemarksText) => {
     if (!canReview) { toast.error('Only Admin or Project Manager can review documents'); return; }
     setReviewing(r => ({ ...r, [docId]: true }));
     try {
       await verifyDocument(docId, {
         status,
-        reviewRemarks: status === 'APPROVED' ? 'Approved by reviewer' : 'Rejected by reviewer',
+        reviewRemarks: reviewRemarksText || (status === 'APPROVED' ? 'Approved by reviewer' : 'Rejected by reviewer'),
         username: user?.username || user?.name || 'system',
       });
       const nextVendorStatus = status === 'APPROVED' ? 'ACTIVE' : 'REJECTED';
@@ -329,7 +332,7 @@ function VendorProfilePanel({ vendor, onClose, refreshVendors, refreshPending, o
                       {d.verificationStatus === 'APPROVED' ? 'Accepted' : 'Accept'}
                     </button>
                     <button
-                      onClick={() => handleVerify(d.documentId, 'REJECTED')}
+                      onClick={() => { setPendingRejectDocId(d.documentId); setRejectRemarks(''); }}
                       disabled={reviewing[d.documentId] || d.verificationStatus === 'REJECTED'}
                       className={`flex items-center gap-1 text-[11px] font-semibold px-2.5 py-1 rounded-lg transition-all
                         ${d.verificationStatus === 'REJECTED'
@@ -346,6 +349,52 @@ function VendorProfilePanel({ vendor, onClose, refreshVendors, refreshPending, o
           ))}
         </div>
       </div>
+
+      {/* Document Rejection Remarks Modal */}
+      <Modal
+        open={pendingRejectDocId !== null}
+        onClose={() => { setPendingRejectDocId(null); setRejectRemarks(''); }}
+        title="Reject Document"
+      >
+        <div className="space-y-4">
+          <p className="text-xs text-slate-500 dark:text-slate-400">
+            Provide a reason for rejection. This will be sent to the vendor.
+          </p>
+          <div>
+            <label className="block text-xs font-medium text-slate-600 dark:text-slate-300 mb-1.5">
+              Rejection Reason <span className="text-red-500">*</span>
+            </label>
+            <textarea
+              value={rejectRemarks}
+              onChange={e => setRejectRemarks(e.target.value)}
+              rows={3}
+              placeholder="e.g. Document is unclear, wrong file type, information mismatch…"
+              className="w-full text-xs rounded-xl border border-slate-200 dark:border-slate-600/50 bg-white/60 dark:bg-slate-800/50 px-3 py-2 outline-none focus:ring-2 focus:ring-red-400/40 focus:border-red-400 resize-none text-slate-700 dark:text-slate-200 placeholder-slate-400"
+            />
+          </div>
+          <div className="flex gap-2 justify-end pt-1">
+            <button
+              onClick={() => { setPendingRejectDocId(null); setRejectRemarks(''); }}
+              className="text-xs px-3 py-1.5 rounded-lg border border-slate-200 dark:border-slate-600/50 text-slate-600 dark:text-slate-300 hover:bg-slate-50 dark:hover:bg-slate-700/50 transition-all"
+            >
+              Cancel
+            </button>
+            <button
+              onClick={async () => {
+                if (!rejectRemarks.trim()) { toast.error('Please provide a rejection reason'); return; }
+                await handleVerify(pendingRejectDocId, 'REJECTED', rejectRemarks.trim());
+                setPendingRejectDocId(null);
+                setRejectRemarks('');
+              }}
+              disabled={reviewing[pendingRejectDocId]}
+              className="flex items-center gap-1.5 text-xs px-3 py-1.5 rounded-lg bg-red-500 hover:bg-red-600 text-white font-semibold disabled:opacity-50 transition-all"
+            >
+              {reviewing[pendingRejectDocId] ? <Loader2 size={11} className="animate-spin" /> : <ThumbsDown size={11} />}
+              Confirm Rejection
+            </button>
+          </div>
+        </div>
+      </Modal>
     </div>
   );
 }
@@ -357,7 +406,7 @@ export default function VendorManagement() {
   const [search, setSearch]             = useState('');
   const [statusFilter, setStatusFilter] = useState('All');
   const [selected, setSelected]         = useState(null);
-  const [pendingDocs, setPendingDocs]   = useState([]);
+  const [vendorSummary, setVendorSummary] = useState(null);
 
   const handleVendorStatusChange = (vendorId, status) => {
     setVendors(prev => prev.map(v => (v.vendorId === vendorId ? { ...v, status } : v)));
@@ -367,23 +416,21 @@ export default function VendorManagement() {
   const fetchVendors = async () => {
     setLoading(true);
     try {
-      const res = await getAllVendors();
-      setVendors(res.data?.data || []);
+      const [vRes, sumRes] = await Promise.allSettled([getAllVendors(), getVendorPageSummary()]);
+      setVendors(vRes.status === 'fulfilled' ? (vRes.value.data?.data || []) : []);
+      setVendorSummary(sumRes.status === 'fulfilled' ? sumRes.value.data : null);
     } catch { toast.error('Failed to load vendors'); }
     finally { setLoading(false); }
   };
 
   const fetchPending = async () => {
     try {
-      const r = await getPendingDocuments();
-      setPendingDocs(toArray(r.data?.data));
-    } catch { setPendingDocs([]); }
+      const sumRes = await getVendorPageSummary();
+      setVendorSummary(sumRes.data);
+    } catch { /* summary refresh failed silently */ }
   };
 
-  useEffect(() => {
-    fetchVendors();
-    if (['ADMIN', 'PROJECT_MANAGER'].includes(user?.role)) fetchPending();
-  }, [user]);
+  useEffect(() => { fetchVendors(); }, []);
 
   const filtered = vendors.filter(v => {
     const q = search.toLowerCase();
@@ -409,12 +456,12 @@ export default function VendorManagement() {
       />
 
       {/* Pending docs alert */}
-      {pendingDocs.length > 0 && (
+      {(vendorSummary?.pendingDocumentsCount ?? 0) > 0 && (
         <div className="glass-card p-4 flex items-center gap-3 border-l-4 border-l-amber-400">
           <AlertTriangle size={16} className="text-amber-500 shrink-0" />
           <div>
             <p className="text-xs font-semibold text-slate-700 dark:text-slate-200">
-              {pendingDocs.length} document{pendingDocs.length > 1 ? 's' : ''} pending review
+              {vendorSummary.pendingDocumentsCount} document{vendorSummary.pendingDocumentsCount > 1 ? 's' : ''} pending review
             </p>
             <p className="text-[10px] text-slate-400">Click a vendor to review and approve/reject documents</p>
           </div>
@@ -424,7 +471,7 @@ export default function VendorManagement() {
       {/* Status stats */}
       <div className="grid grid-cols-3 gap-3">
         {['ACTIVE', 'PENDING', 'REJECTED'].map(s => {
-          const count = vendors.filter(v => v.status === s).length;
+          const count = vendorSummary?.statusCounts?.[s] ?? 0;
           return (
             <div key={s}
               className={`glass-card p-4 flex items-center gap-3 cursor-pointer transition-all hover:shadow-md

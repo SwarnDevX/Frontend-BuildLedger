@@ -1,9 +1,9 @@
-import { useState, useRef, useEffect } from 'react';
+import { useState, useRef, useEffect, useCallback } from 'react';
 import { useLocation, useNavigate } from 'react-router-dom';
 import { Bell, Search, ChevronDown, Moon, Sun, LogOut } from 'lucide-react';
 import { useAuth } from '../../context/AuthContext';
 import { useTheme } from '../../context/ThemeContext';
-import { notifications } from '../../data/mockData';
+import { getAllNotifications, getNotificationsByEmail } from '../../api/notifications';
 
 const pageTitles = {
   '/': 'Dashboard', '/vendors': 'Vendor Management', '/projects': 'Project Management',
@@ -18,6 +18,7 @@ export default function Topbar({ sidebarWidth }) {
   const { user, logout } = useAuth();
   const { isDark, toggleTheme } = useTheme();
   const [showMenu, setShowMenu] = useState(false);
+  const [unread,   setUnread]   = useState(0);
   const menuRef = useRef(null);
 
   useEffect(() => {
@@ -28,7 +29,28 @@ export default function Topbar({ sidebarWidth }) {
     return () => document.removeEventListener('mousedown', handler);
   }, []);
 
-  const unread   = notifications.filter(n => !n.read).length;
+  const refreshUnread = useCallback(async () => {
+    if (!user?.email) return;
+    try {
+      const res  = user.role === 'ADMIN'
+        ? await getAllNotifications()
+        : await getNotificationsByEmail(user.email);
+      const data = Array.isArray(res.data) ? res.data : [];
+      const readIds = new Set(
+        JSON.parse(localStorage.getItem(`bl_notif_read_${user.email}`) ?? '[]')
+      );
+      setUnread(data.filter(n => !readIds.has(n.id)).length);
+    } catch {
+      setUnread(0);
+    }
+  }, [user?.email, user?.role]);
+
+  useEffect(() => {
+    refreshUnread();
+    window.addEventListener('notif-read-change', refreshUnread);
+    return () => window.removeEventListener('notif-read-change', refreshUnread);
+  }, [refreshUnread]);
+
   const title    = pageTitles[location.pathname] || 'BuildLedger';
   const initials = (user?.name || user?.username || 'U').split(' ').map(w => w[0]).join('').slice(0, 2).toUpperCase();
   const today    = new Date().toLocaleDateString('en-US', { weekday: 'long', month: 'long', day: 'numeric', year: 'numeric' });
@@ -80,7 +102,7 @@ export default function Topbar({ sidebarWidth }) {
         <Bell size={15} />
         {unread > 0 && (
           <span className="absolute -top-1 -right-1 w-4 h-4 rounded-full bg-red-500 text-white text-[9px] font-bold flex items-center justify-center">
-            {unread}
+            {unread > 99 ? '99+' : unread}
           </span>
         )}
       </button>

@@ -451,7 +451,6 @@ export default function VendorRegister() {
   };
 
   const handleBack = () => {
-    setAnimDir('back');
     setStep(s => s - 1);
   };
 

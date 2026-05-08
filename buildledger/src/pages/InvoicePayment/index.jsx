@@ -9,8 +9,10 @@ import {
   Table, TableHead, TableHeader, TableBody, TableRow, TableCell,
 } from '../../components/ui';
 import { getAllInvoices, createInvoice, approveInvoice, rejectInvoice } from '../../api/invoices';
+import { checkCompliance } from '../../api/compliance';
 import { getAllPayments, processPayment, updatePaymentStatus } from '../../api/payments';
 import { getAllContracts } from '../../api/contracts';
+import { getInvoicePageSummary } from '../../api/reports';
 import { useAuth } from '../../context/AuthContext';
 import { useTheme } from '../../context/ThemeContext';
 import toast from 'react-hot-toast';
@@ -22,21 +24,6 @@ const stageBg        = { UNDER_REVIEW: 'rgba(245,158,11,0.08)', APPROVED: 'rgba(
 const stageBgDark    = { UNDER_REVIEW: 'rgba(245,158,11,0.07)', APPROVED: 'rgba(20,184,166,0.07)', PAID: 'rgba(34,197,94,0.07)' };
 
 const PAYMENT_METHODS = ['BANK_TRANSFER', 'CHEQUE', 'ONLINE', 'CASH', 'NEFT', 'RTGS', 'UPI'];
-const MONTHS = ['Jan','Feb','Mar','Apr','May','Jun','Jul','Aug','Sep','Oct','Nov','Dec'];
-
-function buildTrend(payments) {
-  const map = {};
-  MONTHS.forEach(m => { map[m] = { month: m, paid: 0, pending: 0 }; });
-  payments.forEach(p => {
-    const d = p.createdAt || p.paymentDate;
-    if (!d) return;
-    const m = MONTHS[new Date(d).getMonth()];
-    if (!m) return;
-    if (p.status === 'COMPLETED') map[m].paid += p.amount || 0;
-    else map[m].pending += p.amount || 0;
-  });
-  return Object.values(map);
-}
 
 function contractLabel(contracts, contractId) {
   const c = contracts.find(x => x.contractId === contractId);
@@ -112,9 +99,13 @@ export default function InvoicePayment() {
   const [invoices, setInvoices]       = useState([]);
   const [payments, setPayments]       = useState([]);
   const [contracts, setContracts]     = useState([]);
+  const [invoiceSummary, setInvoiceSummary] = useState(null);
   const [loading, setLoading]         = useState(true);
   const [showCreate, setShowCreate]   = useState(false);
   const [showPayment, setShowPayment] = useState(false);
+  const [showReject, setShowReject]   = useState(false);
+  const [rejectInvoiceId, setRejectInvoiceId] = useState(null);
+  const [rejectReason,    setRejectReason]    = useState('');
   const [selectedInvoice, setSelectedInvoice] = useState(null);
   const [formI, setFormI]             = useState(EMPTY_INVOICE);
   const [formP, setFormP]             = useState(EMPTY_PAYMENT);
@@ -130,10 +121,13 @@ export default function InvoicePayment() {
   const fetchData = async () => {
     setLoading(true);
     try {
-      const [inv, pay, con] = await Promise.allSettled([getAllInvoices(), getAllPayments(), getAllContracts()]);
+      const [inv, pay, con, sum] = await Promise.allSettled([
+        getAllInvoices(), getAllPayments(), getAllContracts(), getInvoicePageSummary(),
+      ]);
       setInvoices(inv.status === 'fulfilled'  ? (inv.value.data?.data || []) : []);
       setPayments(pay.status === 'fulfilled'  ? (pay.value.data?.data || []) : []);
       setContracts(con.status === 'fulfilled' ? (con.value.data?.data || []) : []);
+      setInvoiceSummary(sum.status === 'fulfilled' ? sum.value.data : null);
     } catch { toast.error('Failed to load invoices'); }
     finally { setLoading(false); }
   };
@@ -141,15 +135,35 @@ export default function InvoicePayment() {
   useEffect(() => { fetchData(); }, []);
 
   const handleApprove = async (id) => {
+    try {
+      await checkCompliance(id, 'INVOICE_CHECK');
+    } catch {
+      toast.error(
+        `Invoice #${id} cannot be approved yet — create an INVOICE_CHECK compliance record (Reference ID: ${id}) in Compliance & Audit and move it to PASSED first.`,
+        { duration: 6000 }
+      );
+      return;
+    }
     try { await approveInvoice(id); toast.success('Invoice approved'); fetchData(); }
     catch (err) { showErrors(err); }
   };
 
-  const handleReject = async (id) => {
-    const reason = prompt('Rejection reason:');
-    if (reason === null) return;
-    try { await rejectInvoice(id, reason); toast.success('Invoice rejected'); fetchData(); }
-    catch (err) { showErrors(err); }
+  const openRejectModal = (id) => {
+    setRejectInvoiceId(id);
+    setRejectReason('');
+    setShowReject(true);
+  };
+
+  const handleReject = async () => {
+    if (!rejectReason.trim()) { toast.error('Please provide a rejection reason'); return; }
+    try {
+      await rejectInvoice(rejectInvoiceId, rejectReason.trim());
+      toast.success('Invoice rejected');
+      setShowReject(false);
+      setRejectInvoiceId(null);
+      setRejectReason('');
+      fetchData();
+    } catch (err) { showErrors(err); }
   };
 
   const openPaymentModal = (invoice) => {
@@ -201,18 +215,13 @@ export default function InvoicePayment() {
   const setI = k => e => setFormI(p => ({ ...p, [k]: e.target.value }));
   const setP = k => e => setFormP(p => ({ ...p, [k]: e.target.value }));
 
-  const total   = invoices.reduce((a, b) => a + (b.amount || 0), 0);
-  const paid    = invoices.filter(i => i.status === 'PAID').reduce((a, b) => a + (b.amount || 0), 0);
-  const pending = invoices.filter(i => i.status === 'UNDER_REVIEW').reduce((a, b) => a + (b.amount || 0), 0);
-  const now     = new Date();
-  const overdue = invoices.filter(i => i.status === 'UNDER_REVIEW' && i.dueDate && new Date(i.dueDate) < now).reduce((a, b) => a + (b.amount || 0), 0);
-  const trendData = buildTrend(payments);
+  const trendData = invoiceSummary?.paymentTrendData ?? [];
 
   const summaryCards = [
-    { label: 'Total Invoiced', value: `$${(total/1000).toFixed(0)}K`,   icon: DollarSign,   color: '#3b82f6', bg: 'rgba(59,130,246,0.1)' },
-    { label: 'Paid',           value: `$${(paid/1000).toFixed(0)}K`,    icon: CheckCircle2, color: '#22C55E', bg: 'rgba(34,197,94,0.1)'  },
-    { label: 'Under Review',   value: `$${(pending/1000).toFixed(0)}K`, icon: Clock,        color: '#F59E0B', bg: 'rgba(245,158,11,0.1)' },
-    { label: 'Overdue',        value: `$${(overdue/1000).toFixed(0)}K`, icon: AlertTriangle,color: '#EF4444', bg: 'rgba(239,68,68,0.1)'  },
+    { label: 'Total Invoiced', value: `$${((invoiceSummary?.totalInvoiced ?? 0) / 1000).toFixed(0)}K`, icon: DollarSign,    color: '#3b82f6', bg: 'rgba(59,130,246,0.1)' },
+    { label: 'Paid',           value: `$${((invoiceSummary?.paid          ?? 0) / 1000).toFixed(0)}K`, icon: CheckCircle2,  color: '#22C55E', bg: 'rgba(34,197,94,0.1)'  },
+    { label: 'Under Review',   value: `$${((invoiceSummary?.underReview   ?? 0) / 1000).toFixed(0)}K`, icon: Clock,         color: '#F59E0B', bg: 'rgba(245,158,11,0.1)' },
+    { label: 'Overdue',        value: `$${((invoiceSummary?.overdue       ?? 0) / 1000).toFixed(0)}K`, icon: AlertTriangle, color: '#EF4444', bg: 'rgba(239,68,68,0.1)'  },
   ];
 
   const axisColor = isDark ? '#8aa4b6' : '#94a3b8';
@@ -279,7 +288,7 @@ export default function InvoicePayment() {
             <div className="flex items-center gap-1.5 text-xs text-slate-500 dark:text-slate-400"><div className="w-2.5 h-2.5 rounded-full bg-amber-500" />Pending</div>
           </div>
         </div>
-        <ApprovalPipeline invoices={invoices} onApprove={handleApprove} onReject={handleReject}
+        <ApprovalPipeline invoices={invoices} onApprove={handleApprove} onReject={openRejectModal}
           onPayment={openPaymentModal} canApprove={canApprove} isDark={isDark} />
       </div>
 
@@ -310,7 +319,7 @@ export default function InvoicePayment() {
                       {canApprove && inv.status === 'UNDER_REVIEW' && (
                         <>
                           <button onClick={() => handleApprove(inv.invoiceId)} className="text-xs text-green-600 dark:text-green-400 hover:underline font-medium">Approve</button>
-                          <button onClick={() => handleReject(inv.invoiceId)}  className="text-xs text-red-500 dark:text-red-400 hover:underline font-medium">Reject</button>
+                          <button onClick={() => openRejectModal(inv.invoiceId)} className="text-xs text-red-500 dark:text-red-400 hover:underline font-medium">Reject</button>
                         </>
                       )}
                       {canApprove && inv.status === 'APPROVED' && (
@@ -379,6 +388,35 @@ export default function InvoicePayment() {
           <div className="flex gap-2 justify-end pt-2">
             <Button variant="secondary" size="xs" onClick={() => { setShowCreate(false); setFormI(EMPTY_INVOICE); setIErrors({}); }}>Cancel</Button>
             <Button variant="primary" size="xs" onClick={handleCreate} loading={saving}>Submit Invoice</Button>
+          </div>
+        </div>
+      </Modal>
+
+      {/* Reject Invoice Modal */}
+      <Modal
+        open={showReject}
+        onClose={() => { setShowReject(false); setRejectInvoiceId(null); setRejectReason(''); }}
+        title={`Reject Invoice #${rejectInvoiceId}`}
+      >
+        <div className="space-y-4">
+          <p className="text-xs text-slate-500 dark:text-slate-400">
+            Provide a reason for rejection. This will be recorded against the invoice.
+          </p>
+          <FormTextarea
+            label="Rejection Reason"
+            required
+            value={rejectReason}
+            onChange={e => setRejectReason(e.target.value)}
+            rows={3}
+            placeholder="e.g. Amount mismatch, missing delivery confirmation, duplicate invoice…"
+          />
+          <div className="flex gap-2 justify-end pt-2">
+            <Button variant="secondary" size="xs" onClick={() => { setShowReject(false); setRejectInvoiceId(null); setRejectReason(''); }}>
+              Cancel
+            </Button>
+            <Button variant="danger" size="xs" onClick={handleReject}>
+              Confirm Rejection
+            </Button>
           </div>
         </div>
       </Modal>

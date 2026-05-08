@@ -16,6 +16,7 @@ import {
 } from '../../api/contracts';
 import { getAllVendors } from '../../api/vendors';
 import { getAllProjects } from '../../api/projects';
+import { getContractPageSummary } from '../../api/reports';
 import { useAuth } from '../../context/AuthContext';
 import toast from 'react-hot-toast';
 
@@ -429,6 +430,7 @@ export default function ContractManagement() {
   const [contracts, setContracts]    = useState([]);
   const [vendors, setVendors]        = useState([]);
   const [projects, setProjects]      = useState([]);
+  const [contractSummary, setContractSummary] = useState(null);
   const [loading, setLoading]        = useState(true);
   const [selected, setSelected]      = useState(null);
   const [showCreate, setShowCreate]  = useState(false);
@@ -453,10 +455,13 @@ export default function ContractManagement() {
   const fetchData = useCallback(async () => {
     setLoading(true);
     try {
-      const [c, v, p] = await Promise.allSettled([getAllContracts(), getAllVendors(), getAllProjects()]);
-      setContracts(c.status === 'fulfilled' ? (c.value.data?.data ?? []) : []);
-      setVendors(v.status === 'fulfilled'   ? (v.value.data?.data ?? []) : []);
-      setProjects(p.status === 'fulfilled'  ? (p.value.data?.data ?? []) : []);
+      const [c, v, p, sum] = await Promise.allSettled([
+        getAllContracts(), getAllVendors(), getAllProjects(), getContractPageSummary(),
+      ]);
+      setContracts(c.status === 'fulfilled'   ? (c.value.data?.data ?? []) : []);
+      setVendors(v.status === 'fulfilled'     ? (v.value.data?.data ?? []) : []);
+      setProjects(p.status === 'fulfilled'    ? (p.value.data?.data ?? []) : []);
+      setContractSummary(sum.status === 'fulfilled' ? sum.value.data : null);
     } catch { toast.error('Failed to load data'); }
     finally { setLoading(false); }
   }, []);
@@ -486,8 +491,7 @@ export default function ContractManagement() {
 
   const set = (k) => (e) => setForm((p) => ({ ...p, [k]: e.target.value }));
 
-  const counts = { ALL: contracts.length, DRAFT: 0, ACTIVE: 0, COMPLETED: 0, TERMINATED: 0, EXPIRED: 0 };
-  contracts.forEach(c => { if (counts[c.status] !== undefined) counts[c.status]++; });
+  const counts = contractSummary?.statusCounts ?? { ALL: 0, DRAFT: 0, ACTIVE: 0, COMPLETED: 0, TERMINATED: 0, EXPIRED: 0 };
 
   const displayed     = filterStatus === 'ALL' ? contracts : contracts.filter(c => c.status === filterStatus);
   const activeVendors = vendors.filter(v => v.status === 'ACTIVE');

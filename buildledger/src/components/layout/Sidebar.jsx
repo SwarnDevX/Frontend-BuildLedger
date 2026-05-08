@@ -9,7 +9,7 @@ import { useAuth } from '../../context/AuthContext';
 const ALL_NAV = [
   { icon: LayoutDashboard, label: 'Dashboard',     path: '/',                 roles: ['ADMIN','PROJECT_MANAGER','FINANCE_OFFICER','COMPLIANCE_OFFICER'] },
   { icon: Package,          label: 'My Portal',    path: '/vendor/dashboard', roles: ['VENDOR'] },
-  { icon: Users,            label: 'Vendors',      path: '/vendors',          roles: ['ADMIN','PROJECT_MANAGER','COMPLIANCE_OFFICER'] },
+  { icon: Users,            label: 'Vendors',      path: '/vendors',          roles: ['ADMIN','PROJECT_MANAGER'] },
   { icon: Briefcase,        label: 'Projects',     path: '/projects',         roles: ['ADMIN','PROJECT_MANAGER'] },
   { icon: FileText,         label: 'Contracts',    path: '/contracts',        roles: ['ADMIN','PROJECT_MANAGER'] },
   { icon: Truck,            label: 'Deliveries',   path: '/deliveries',       roles: ['ADMIN','PROJECT_MANAGER','VENDOR'] },

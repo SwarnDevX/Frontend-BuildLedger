@@ -12,6 +12,7 @@ import {
   getAllProjects, createProject, updateProject, deleteProject, updateProjectStatus,
 } from '../../api/projects';
 import { getUserByRole } from '../../api/users';
+import { getProjectPageSummary } from '../../api/reports';
 import { useAuth } from '../../context/AuthContext';
 import toast from 'react-hot-toast';
 
@@ -382,6 +383,7 @@ export default function ProjectManagement() {
   const { user }                    = useAuth();
   const [projects, setProjects]     = useState([]);
   const [managers, setManagers]     = useState([]);
+  const [projectSummary, setProjectSummary] = useState(null);
   const [loading, setLoading]       = useState(true);
   const [selected, setSelected]     = useState(null);
   const [showCreate, setShowCreate] = useState(false);
@@ -407,9 +409,12 @@ export default function ProjectManagement() {
   const fetchData = useCallback(async () => {
     setLoading(true);
     try {
-      const [pr, mr] = await Promise.allSettled([getAllProjects(), getUserByRole('PROJECT_MANAGER')]);
-      setProjects(pr.status === 'fulfilled' ? (pr.value.data?.data ?? []) : []);
-      setManagers(mr.status === 'fulfilled' ? (mr.value.data?.data ?? mr.value.data ?? []) : []);
+      const [pr, mr, sum] = await Promise.allSettled([
+        getAllProjects(), getUserByRole('PROJECT_MANAGER'), getProjectPageSummary(),
+      ]);
+      setProjects(pr.status === 'fulfilled'  ? (pr.value.data?.data ?? []) : []);
+      setManagers(mr.status === 'fulfilled'  ? (mr.value.data?.data ?? mr.value.data ?? []) : []);
+      setProjectSummary(sum.status === 'fulfilled' ? sum.value.data : null);
     } catch {
       toast.error('Failed to load data');
     } finally { setLoading(false); }
@@ -452,8 +457,7 @@ export default function ProjectManagement() {
 
   const closeCreate = () => { setShowCreate(false); setForm(EMPTY_FORM); setFormErrors({}); };
 
-  const counts = { ALL: projects.length, PLANNING: 0, ACTIVE: 0, ON_HOLD: 0, COMPLETED: 0, CANCELLED: 0 };
-  projects.forEach(p => { if (counts[p.status] !== undefined) counts[p.status]++; });
+  const counts = projectSummary?.statusCounts ?? { ALL: 0, PLANNING: 0, ACTIVE: 0, ON_HOLD: 0, COMPLETED: 0, CANCELLED: 0 };
 
   const displayed = filterStatus === 'ALL' ? projects : projects.filter(p => p.status === filterStatus);
 
