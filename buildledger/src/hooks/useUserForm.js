@@ -8,6 +8,7 @@ const EMPTY_FORM = {
   email: "",
   phone: "",
   password: "",
+  status: "ACTIVE",
   role: "PROJECT_MANAGER",
 };
 
@@ -35,6 +36,7 @@ export function useUserForm(editUser, fetchUsers, setShowCreate) {
       email: u.email || "",
       phone: u.phone || "",
       password: "",
+      status: u.status || "ACTIVE",
       role: u.role,
     });
     setFormErr({});
@@ -160,10 +162,9 @@ export function useUserForm(editUser, fetchUsers, setShowCreate) {
       if (editUser) {
         const payload = {
           name: form.name,
-          username: form.username,
           email: form.email,
           phone: form.phone,
-          role: form.role,
+          status: form.status || editUser.status || "ACTIVE",
         };
         if (form.password) payload.password = form.password;
         await updateUser(editUser.userId, payload);

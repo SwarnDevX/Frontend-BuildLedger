@@ -15,6 +15,9 @@ import ComplianceAudit from '../pages/ComplianceAudit';
 import AdminPanel from '../pages/AdminPanel';
 import Notifications from '../pages/Notifications';
 import VendorDashboard from '../pages/VendorDashboard';
+import VendorContracts from '../pages/VendorContracts';
+import VendorDeliveries from '../pages/VendorDeliveries';
+import VendorInvoices from '../pages/VendorInvoices';
 import ProjectManagement from '../pages/ProjectManagement';
 import { useAuth } from '../context/AuthContext';
 
@@ -58,6 +61,30 @@ export const router = createBrowserRouter([
           </ProtectedRoute>
         ),
       },
+      {
+        path: 'vendor/contracts',
+        element: (
+          <ProtectedRoute roles={['VENDOR']}>
+            <VendorContracts />
+          </ProtectedRoute>
+        ),
+      },
+      {
+        path: 'vendor/deliveries',
+        element: (
+          <ProtectedRoute roles={['VENDOR']}>
+            <VendorDeliveries />
+          </ProtectedRoute>
+        ),
+      },
+      {
+        path: 'vendor/invoices',
+        element: (
+          <ProtectedRoute roles={['VENDOR']}>
+            <VendorInvoices />
+          </ProtectedRoute>
+        ),
+      },
       // Vendor management
       {
         path: 'vendors',
@@ -89,7 +116,7 @@ export const router = createBrowserRouter([
       {
         path: 'deliveries',
         element: (
-          <ProtectedRoute roles={['ADMIN', 'PROJECT_MANAGER', 'VENDOR']}>
+          <ProtectedRoute roles={['ADMIN', 'PROJECT_MANAGER']}>
             <DeliveryTracking />
           </ProtectedRoute>
         ),

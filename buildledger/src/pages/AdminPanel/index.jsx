@@ -26,6 +26,7 @@ import {
   TableCell,
 } from "../../components/ui";
 import { getAllUsers, deleteUser } from "../../api/users";
+import { getProjectsByManager } from "../../api/projects";
 import toast from "react-hot-toast";
 import { useUserForm } from "../../hooks/useUserForm";
 
@@ -112,6 +113,9 @@ export default function AdminPanel() {
     auditLogging: true,
     notifications: true,
   });
+  const [showDeleteModal, setShowDeleteModal] = useState(false);
+  const [deleteTarget, setDeleteTarget] = useState(null);
+  const [remarks, setRemarks] = useState("");
 
   // ── All form + validation logic lives in this hook ──
   const {
@@ -156,10 +160,58 @@ export default function AdminPanel() {
   };
 
   const handleDelete = async (u) => {
+    // Check role-based restrictions
+    if (u.role === "COMPLIANCE_OFFICER" || u.role === "FINANCE_OFFICER") {
+      toast.error(
+        `Cannot delete ${u.role.replace("_", " ")}. Only one officer allowed in the system.`,
+      );
+      return;
+    }
+
+    // For PROJECT_MANAGER, check if assigned to any projects
+    if (u.role === "PROJECT_MANAGER") {
+      try {
+        const res = await getProjectsByManager(u.userId);
+        const assignedProjects = res.data?.data || res.data || [];
+        if (assignedProjects.length > 0) {
+          toast.error(
+            `Cannot delete. This Project Manager is assigned to ${assignedProjects.length} project(s).`,
+          );
+          return;
+        }
+      } catch (err) {
+        console.warn("Could not check project assignments", err);
+      }
+      // Open remarks modal for PM deletion
+      setDeleteTarget(u);
+      setRemarks("");
+      setShowDeleteModal(true);
+      return;
+    }
+
+    // For other roles, proceed with normal delete
     if (!confirm(`Delete user "${u.name || u.username}"?`)) return;
     try {
       await deleteUser(u.userId);
       toast.success("User deleted");
+      fetchUsers();
+    } catch {
+      toast.error("Delete failed");
+    }
+  };
+
+  const confirmDeleteWithRemarks = async () => {
+    if (!deleteTarget) return;
+    if (!remarks.trim()) {
+      toast.error("Please provide remarks before deleting");
+      return;
+    }
+    try {
+      await deleteUser(deleteTarget.userId);
+      toast.success(`User deleted. Remarks recorded: ${remarks}`);
+      setShowDeleteModal(false);
+      setDeleteTarget(null);
+      setRemarks("");
       fetchUsers();
     } catch {
       toast.error("Delete failed");
@@ -290,14 +342,17 @@ export default function AdminPanel() {
                       >
                         <Edit2 size={13} />
                       </button>
-                      {u.role !== "ADMIN" && (
-                        <button
-                          onClick={() => handleDelete(u)}
-                          className="text-slate-400 hover:text-red-500 dark:hover:text-red-400 transition-colors p-1 rounded-lg hover:bg-red-50 dark:hover:bg-red-900/20"
-                        >
-                          <Trash2 size={13} />
-                        </button>
-                      )}
+                      {u.role !== "ADMIN" &&
+                        u.role !== "COMPLIANCE_OFFICER" &&
+                        u.role !== "FINANCE_OFFICER" && (
+                          <button
+                            onClick={() => handleDelete(u)}
+                            className="text-slate-400 hover:text-red-500 dark:hover:text-red-400 transition-colors p-1 rounded-lg hover:bg-red-50 dark:hover:bg-red-900/20"
+                            title="Delete user"
+                          >
+                            <Trash2 size={13} />
+                          </button>
+                        )}
                     </div>
                   </TableCell>
                 </TableRow>
@@ -428,6 +483,61 @@ export default function AdminPanel() {
         </div>
       </div> */}
 
+      {/* Delete with Remarks Modal */}
+      <Modal
+        open={showDeleteModal}
+        onClose={() => {
+          setShowDeleteModal(false);
+          setDeleteTarget(null);
+          setRemarks("");
+        }}
+        title={`Delete Project Manager: ${deleteTarget?.name || deleteTarget?.username}`}
+      >
+        <div className="space-y-4">
+          <div className="bg-amber-50 dark:bg-amber-900/20 border border-amber-200 dark:border-amber-700/40 rounded-xl p-3">
+            <p className="text-xs font-semibold text-amber-800 dark:text-amber-200">
+              ⚠️ Deletion requires remarks
+            </p>
+            <p className="text-[11px] text-amber-700 dark:text-amber-300 mt-1">
+              Please provide a reason for deleting this Project Manager.
+            </p>
+          </div>
+          <div>
+            <label className="text-xs font-semibold text-slate-600 dark:text-slate-300 block mb-2">
+              Remarks
+            </label>
+            <textarea
+              value={remarks}
+              onChange={(e) => setRemarks(e.target.value)}
+              placeholder="Enter reason for deletion (e.g., transferred, resigned, etc.)"
+              className="w-full rounded-xl border border-slate-200 bg-white px-3 py-2 text-sm text-slate-700 outline-none transition-all focus:border-blue-500 dark:border-slate-700 dark:bg-slate-900 dark:text-slate-200 dark:placeholder-slate-500"
+              rows={3}
+            />
+          </div>
+          <div className="flex gap-2 justify-end pt-2">
+            <Button
+              variant="secondary"
+              size="xs"
+              onClick={() => {
+                setShowDeleteModal(false);
+                setDeleteTarget(null);
+                setRemarks("");
+              }}
+            >
+              Cancel
+            </Button>
+            <Button
+              variant="primary"
+              size="xs"
+              onClick={confirmDeleteWithRemarks}
+              className="bg-red-600! hover:bg-red-700!"
+            >
+              Delete User
+            </Button>
+          </div>
+        </div>
+      </Modal>
+
       {/* Create/Edit User Modal */}
       <Modal
         open={showCreate}
@@ -482,8 +592,7 @@ export default function AdminPanel() {
             onChange={set("username")}
             onBlur={handleBlur("username")}
             error={formErr.username}
-             disabled={!form.name.trim() || !!formErr.name} 
-
+            disabled={editUser || !form.name.trim() || !!formErr.name}
           />
           <FormInput
             label="Email"
@@ -504,17 +613,34 @@ export default function AdminPanel() {
             error={formErr.phone}
             disabled={!form.email.trim() || !!formErr.email}
           />
-          <FormInput
-            label={editUser ? "New Password (leave blank to keep)" : "Password"}
-            required={!editUser}
-            type="password"
-            placeholder="Min. 8 chars, A-Z, a-z, 0-9, @$!%*?&"
-            value={form.password}
-            onChange={set("password")}
-            onBlur={handleBlur("password")}
-            error={formErr.password}
-            disabled={!form.email.trim() || !!formErr.email}
-          />
+          {editUser && (
+            <div>
+              <label className="text-xs font-semibold text-slate-600 dark:text-slate-300 block mb-2">
+                Status
+              </label>
+              <select
+                value={form.status}
+                onChange={set("status")}
+                className="w-full rounded-xl border border-slate-200 bg-white px-3 py-2 text-sm text-slate-700 outline-none transition-all focus:border-blue-500 dark:border-slate-700 dark:bg-slate-900 dark:text-slate-200"
+              >
+                <option value="ACTIVE">ACTIVE</option>
+                <option value="INACTIVE">INACTIVE</option>
+              </select>
+            </div>
+          )}
+          {!editUser && (
+            <FormInput
+              label="Password"
+              required
+              type="password"
+              placeholder="Min. 8 chars, A-Z, a-z, 0-9, @$!%*?&"
+              value={form.password}
+              onChange={set("password")}
+              onBlur={handleBlur("password")}
+              error={formErr.password}
+              disabled={!form.email.trim() || !!formErr.email}
+            />
+          )}
           <div className="flex gap-2 justify-end pt-2">
             <Button
               variant="secondary"

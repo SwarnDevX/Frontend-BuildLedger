@@ -173,13 +173,19 @@ export default function Notifications() {
 
   useEffect(() => {
     fetchAll();
-  }, [isAdmin]);
+  }, [fetchAll]);
 
-  const filtered = items.filter((n) => {
-    if (filter === "All") return true;
-    if (filter === "Unread") return !n.read;
-    return n.category === filter;
-  });
+  const filtered = items
+    .filter((n) => {
+      if (filter === "All") return true;
+      if (filter === "Unread") return !n.read;
+      return n.category === filter;
+    })
+    .sort((a, b) => {
+      const dateA = new Date(a.createdAt || 0).getTime();
+      const dateB = new Date(b.createdAt || 0).getTime();
+      return dateB - dateA; // Newest first
+    });
 
   const markAllRead = async () => {
     const unreadItems = items.filter((n) => !n.read);
@@ -188,6 +194,8 @@ export default function Notifications() {
     );
     setItems((prev) => prev.map((n) => ({ ...n, read: true })));
     setBackendUnreadCount(0);
+
+    window.dispatchEvent(new Event("notif-read-change"));
   };
 
   const markRead = async (id) => {
@@ -199,6 +207,8 @@ export default function Notifications() {
       setBackendUnreadCount((prev) =>
         prev === null ? null : Math.max(prev - 1, 0),
       );
+
+      window.dispatchEvent(new Event("notif-read-change"));
     } catch (error) {
       console.error("Failed to mark as read:", error);
     }

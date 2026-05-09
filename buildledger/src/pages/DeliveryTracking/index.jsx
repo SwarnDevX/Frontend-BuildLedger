@@ -210,10 +210,11 @@ export default function DeliveryTracking() {
 
   const handleCreateDelivery = async () => {
     const e = {};
-    if (!formD.contractId)    e.contractId = 'Please select a contract';
-    if (!formD.item.trim())   e.item       = 'Item is required';
-    if (!formD.quantity)      e.quantity   = 'Quantity is required';
-    if (!formD.date)          e.date       = 'Delivery date is required';
+    if (!formD.contractId)        e.contractId = 'Please select a contract';
+    if (!formD.item.trim())       e.item       = 'Item is required';
+    if (!formD.quantity)          e.quantity   = 'Quantity is required';
+    if (!formD.unit?.trim())      e.unit       = 'Unit is required';
+    if (!formD.date)              e.date       = 'Delivery date is required';
     setDErrors(e);
     if (Object.keys(e).length) return;
     setSaving(true);
@@ -305,6 +306,9 @@ export default function DeliveryTracking() {
 
   const setD = k => e => setFormD(p => ({ ...p, [k]: e.target.value }));
   const setS = k => e => setFormS(p => ({ ...p, [k]: e.target.value }));
+
+  const selectedDeliveryContract = contracts.find(c => String(c.contractId) === String(formD.contractId));
+  const selectedServiceContract  = contracts.find(c => String(c.contractId) === String(formS.contractId));
 
   if (loading) return (
     <div className="flex items-center justify-center h-64 gap-2 text-slate-400">
@@ -512,7 +516,10 @@ export default function DeliveryTracking() {
             label="Contract"
             required
             value={formD.contractId}
-            onChange={e => { setD('contractId')(e); if (e.target.value) setDErrors(p => ({ ...p, contractId: '' })); }}
+            onChange={e => {
+              setFormD(p => ({ ...p, contractId: e.target.value, date: '' }));
+              if (e.target.value) setDErrors(p => ({ ...p, contractId: '' }));
+            }}
             error={dErrors.contractId}
             hint={contracts.filter(c => c.status === 'ACTIVE').length === 0 ? 'No active contracts. A vendor must accept a contract first.' : ''}
           >
@@ -543,14 +550,27 @@ export default function DeliveryTracking() {
               placeholder="0.00"
               error={dErrors.quantity}
             />
-            <FormInput label="Unit" value={formD.unit} onChange={setD('unit')} placeholder="tons, kg, pcs…" />
+            <FormInput
+              label="Unit"
+              required
+              value={formD.unit}
+              onChange={e => { setD('unit')(e); if (e.target.value.trim()) setDErrors(p => ({ ...p, unit: '' })); }}
+              placeholder="tons, kg, pcs…"
+              error={dErrors.unit}
+            />
           </div>
           <FormInput
             label="Delivery Date"
             required
-            hint="(today or earlier)"
+            hint={
+              selectedDeliveryContract
+                ? `Today → ${selectedDeliveryContract.endDate} (contract end)`
+                : 'Select a contract first'
+            }
             type="date"
-            max={today}
+            min={today}
+            max={selectedDeliveryContract?.endDate || undefined}
+            disabled={!selectedDeliveryContract}
             value={formD.date}
             onChange={e => { setD('date')(e); if (e.target.value) setDErrors(p => ({ ...p, date: '' })); }}
             error={dErrors.date}
@@ -570,8 +590,12 @@ export default function DeliveryTracking() {
             label="Contract"
             required
             value={formS.contractId}
-            onChange={e => { setS('contractId')(e); if (e.target.value) setSErrors(p => ({ ...p, contractId: '' })); }}
+            onChange={e => {
+              setFormS(p => ({ ...p, contractId: e.target.value, completionDate: '' }));
+              if (e.target.value) setSErrors(p => ({ ...p, contractId: '' }));
+            }}
             error={sErrors.contractId}
+            hint={contracts.filter(c => c.status === 'ACTIVE').length === 0 ? 'No active contracts. A vendor must accept a contract first.' : ''}
           >
             <option value="">Select contract…</option>
             {contracts.filter(c => c.status === 'ACTIVE').map(c => (
@@ -593,9 +617,15 @@ export default function DeliveryTracking() {
           <FormInput
             label="Expected Completion Date"
             required
-            hint="(today or later)"
+            hint={
+              selectedServiceContract
+                ? `Today → ${selectedServiceContract.endDate} (contract end)`
+                : 'Select a contract first'
+            }
             type="date"
             min={today}
+            max={selectedServiceContract?.endDate || undefined}
+            disabled={!selectedServiceContract}
             value={formS.completionDate}
             onChange={e => { setS('completionDate')(e); if (e.target.value) setSErrors(p => ({ ...p, completionDate: '' })); }}
             error={sErrors.completionDate}
