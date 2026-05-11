@@ -15,13 +15,24 @@ import AdminPanel from '../pages/AdminPanel';
 import Notifications from '../pages/Notifications';
 import VendorDashboard from '../pages/VendorDashboard';
 import ProjectManagement from '../pages/ProjectManagement';
+import { useAuth } from '../context/AuthContext';
+import ChangePassword from '../pages/ChangePassword';
+
+function DashboardRouter() {
+  const { user } = useAuth();
+  if (user?.role === 'COMPLIANCE_OFFICER') return <ComplianceDashboard />;
+  return <Dashboard />;
+}
+ 
 
 export const router = createBrowserRouter([
   // Public routes
   { path: '/login', element: <Login /> },
+  { path: '/change-password', element: <ChangePassword /> }, 
   { path: '/vendor/register', element: <VendorOnboarding /> },
   { path: '/vendor/reupload-documents', element: <VendorReuploadDocuments /> },
   { path: '/unauthorized', element: <Unauthorized /> },
+  
 
   // Protected app shell
   {

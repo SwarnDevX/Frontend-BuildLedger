@@ -228,7 +228,7 @@ export default function Notifications() {
           <div>
             <h2 className="text-xl font-bold text-slate-800">Notifications</h2>
             <p className="text-sm text-slate-400">
-              {displayUnreadCount} unread alerts
+            {displayUnreadCount} unread alerts
             </p>
           </div>
         </div>

@@ -30,11 +30,21 @@ export default function Login() {
       return;
     }
     setLoading(true);
-    try {
-      const user = await login(form.username, form.password);
-      toast.success(`Welcome back, ${user.name || user.username}!`);
-      navigate(user.role === "VENDOR" ? "/vendor/dashboard" : from, { replace: true });
-    } catch (err) {
+  try {
+  const user = await login(form.username, form.password);
+
+  // ← Redirect to change password page if required
+  if (user?.requiresPasswordChange) {
+    navigate("/change-password", {
+      state: { username: user.username },
+      replace: true,
+    });
+    return;
+  }
+
+  toast.success(`Welcome back, ${user.name || user.username}!`);
+  navigate(user.role === "VENDOR" ? "/vendor/dashboard" : from, { replace: true });
+} catch (err) {
       const msg = err.response?.data?.message || "Invalid username or password.";
       setError(msg);
       toast.error(msg);

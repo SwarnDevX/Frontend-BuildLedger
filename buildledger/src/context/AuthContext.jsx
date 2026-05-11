@@ -69,14 +69,20 @@ export function AuthProvider({ children }) {
     setUser(null);
   };
 
-  const login = useCallback(async (username, password) => {
-    const res = await apiLogin(username, password);
-    const payload = res.data?.data || res.data;
-    const jwt = payload?.token || payload?.accessToken || payload;
-    if (!jwt) throw new Error('No token received');
+const login = useCallback(async (username, password) => {
+  const res = await apiLogin(username, password);
+  const payload = res.data?.data || res.data;
 
-    localStorage.setItem('bl_token', jwt);
-    setToken(jwt);
+  // ← Check if password change is required BEFORE extracting token
+  if (payload?.requiresPasswordChange === true) {
+    return { requiresPasswordChange: true, username: payload.username };
+  }
+
+  const jwt = payload?.token || payload?.accessToken || payload;
+  if (!jwt) throw new Error('No token received');
+
+  localStorage.setItem('bl_token', jwt);
+  setToken(jwt);
 
     // Fetch user profile, fall back to token claims if /auth/me fails
     try {

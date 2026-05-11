@@ -7,6 +7,8 @@ export const createUser    = (data)      => api.post('/users', data);
 export const updateUser    = (id, data)  => api.put(`/users/${id}`, data);
 export const deleteUser    = (id)        => api.delete(`/users/${id}`);
 export const validateRole  = (id)        => api.get(`/users/${id}/validate-role`);
+export const changePassword = (data) =>
+  api.post('/users/change-password', data);
 
 export const createInternalVendorUser = ({ username, encodedPassword, name, email, phone }) => {
   const params = new URLSearchParams({ username, encodedPassword, name });

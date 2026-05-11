@@ -1,9 +1,10 @@
-import { useState, useRef, useEffect, useCallback } from 'react';
+import { useState, useRef, useEffect } from 'react';
+import { createPortal } from 'react-dom';
 import { useLocation, useNavigate } from 'react-router-dom';
 import { Bell, Search, ChevronDown, Moon, Sun, LogOut } from 'lucide-react';
 import { useAuth } from '../../context/AuthContext';
 import { useTheme } from '../../context/ThemeContext';
-import { getMyNotifications } from '../../api/notifications';
+import { getAllNotifications, getMyNotifications } from '../../api/notifications';
 
 const pageTitles = {
   '/':                   'Dashboard',
@@ -24,9 +25,11 @@ export default function Topbar({ sidebarWidth }) {
   const navigate             = useNavigate();
   const { user, logout }     = useAuth();
   const { isDark, toggleTheme } = useTheme();
-  const [showMenu, setShowMenu] = useState(false);
-  const [unread, setUnread]  = useState(0);
-  const menuRef              = useRef(null);
+  const [showMenu, setShowMenu]               = useState(false);
+  const [showLogoutModal, setShowLogoutModal] = useState(false);
+  const [unread, setUnread]                   = useState(0);
+  const menuRef          = useRef(null);
+  const notificationsRef = useRef(null);
 
   // Close dropdown on outside click
   useEffect(() => {
@@ -37,23 +40,35 @@ export default function Topbar({ sidebarWidth }) {
     return () => document.removeEventListener('mousedown', handler);
   }, []);
 
-  // Poll /notifications/my — works for ALL roles including VENDOR
-  const refreshUnread = useCallback(async () => {
-    if (!user) return;
-    try {
-      const res = await getMyNotifications();
-      const list = res.data?.data ?? res.data ?? [];
-      setUnread(Array.isArray(list) ? list.filter(n => !n.delivered).length : 0);
-    } catch {
-      // silently ignore — don't spam console on 4xx/5xx
-    }
-  }, [user]);
-
+  // Poll notifications — ADMIN gets all, everyone else gets their own (works for VENDOR too)
   useEffect(() => {
+    let isMounted = true;
+
+    const refreshUnread = async () => {
+      if (!user?.email) {
+        if (isMounted) setUnread(0);
+        return;
+      }
+      try {
+        const res = user.role === 'ADMIN'
+          ? await getAllNotifications()
+          : await getMyNotifications();
+        const list = Array.isArray(res.data) ? res.data : (res.data?.data ?? []);
+        if (isMounted) setUnread(list.filter((n) => !n.read).length);
+      } catch {
+        if (isMounted) setUnread(0);
+      }
+    };
+
     refreshUnread();
-    const id = setInterval(refreshUnread, 30000);
-    return () => clearInterval(id);
-  }, [refreshUnread]);
+    const interval = setInterval(refreshUnread, 5000);
+    window.addEventListener('notif-read-change', refreshUnread);
+    return () => {
+      isMounted = false;
+      clearInterval(interval);
+      window.removeEventListener('notif-read-change', refreshUnread);
+    };
+  }, [user]);
 
   const title    = pageTitles[location.pathname] || 'BuildLedger';
   const initials = (user?.name || user?.username || 'U')
@@ -67,6 +82,7 @@ export default function Topbar({ sidebarWidth }) {
     dark:bg-slate-800/50 dark:border-slate-600/40 dark:text-slate-300 dark:hover:bg-slate-700/70 dark:hover:text-slate-100`;
 
   return (
+    <>
     <header
       className="glass-topbar fixed top-0 right-0 z-20 flex items-center gap-4 px-6"
       style={{ left: sidebarWidth, height: 64 }}
@@ -98,7 +114,11 @@ export default function Topbar({ sidebarWidth }) {
       </button>
 
       {/* Notifications bell */}
-      <button onClick={() => navigate('/notifications')} className={`relative ${iconBtn}`}>
+      <button
+        ref={notificationsRef}
+        onClick={() => navigate('/notifications')}
+        className={`relative ${iconBtn}`}
+      >
         <Bell size={15} />
         {unread > 0 && (
           <span className="absolute -top-1 -right-1 w-4 h-4 rounded-full bg-red-500 text-white text-[9px] font-bold flex items-center justify-center">
@@ -133,7 +153,10 @@ export default function Topbar({ sidebarWidth }) {
               <p className="text-[10px] text-slate-400">{user?.email}</p>
             </div>
             <button
-              onClick={() => { setShowMenu(false); logout(); }}
+              onClick={() => {
+                setShowMenu(false);
+                setShowLogoutModal(true);
+              }}
               className="w-full flex items-center gap-2 px-4 py-2.5 text-xs text-red-500 hover:bg-red-50 dark:hover:bg-red-900/20 transition-colors"
             >
               <LogOut size={13} /> Sign Out
@@ -141,6 +164,94 @@ export default function Topbar({ sidebarWidth }) {
           </div>
         )}
       </div>
+
     </header>
+
+    {showLogoutModal && createPortal(
+      <div
+        style={{
+          position: 'fixed',
+          inset: 0,
+          zIndex: 9999,
+          display: 'flex',
+          alignItems: 'center',
+          justifyContent: 'center',
+          backdropFilter: 'blur(8px)',
+          WebkitBackdropFilter: 'blur(8px)',
+          background: 'rgba(0,0,0,0.45)',
+        }}
+        onClick={(e) => {
+          if (e.target === e.currentTarget) setShowLogoutModal(false);
+        }}
+      >
+        <div
+          style={{
+            background: isDark ? 'rgba(15,23,42,0.95)' : 'rgba(255,255,255,0.98)',
+            border: isDark ? '1px solid rgba(255,255,255,0.1)' : '1px solid rgba(0,0,0,0.08)',
+            borderRadius: 20,
+            padding: '32px 28px',
+            width: 320,
+            boxShadow: '0 25px 60px rgba(0,0,0,0.3)',
+            textAlign: 'center',
+          }}
+        >
+          <div style={{
+            width: 56, height: 56, borderRadius: '50%',
+            background: 'rgba(239,68,68,0.1)',
+            display: 'flex', alignItems: 'center', justifyContent: 'center',
+            margin: '0 auto 16px',
+          }}>
+            <LogOut size={22} color="#ef4444" />
+          </div>
+
+          <h3 style={{
+            fontSize: 17, fontWeight: 600,
+            color: isDark ? '#f1f5f9' : '#1e293b',
+            margin: '0 0 8px',
+          }}>
+            Sign out?
+          </h3>
+
+          <p style={{
+            fontSize: 13,
+            color: isDark ? '#94a3b8' : '#64748b',
+            margin: '0 0 24px', lineHeight: 1.5,
+          }}>
+            Are you sure you want to sign out of BuildLedger?
+          </p>
+
+          <div style={{ display: 'flex', gap: 10 }}>
+            <button
+              onClick={() => setShowLogoutModal(false)}
+              style={{
+                flex: 1, padding: '10px 0', borderRadius: 12,
+                fontSize: 13, fontWeight: 500, cursor: 'pointer',
+                border: isDark ? '1px solid rgba(255,255,255,0.1)' : '1px solid rgba(0,0,0,0.1)',
+                background: isDark ? 'rgba(255,255,255,0.06)' : 'rgba(0,0,0,0.04)',
+                color: isDark ? '#cbd5e1' : '#475569',
+              }}
+              onMouseEnter={(e) => e.currentTarget.style.background = isDark ? 'rgba(255,255,255,0.1)' : 'rgba(0,0,0,0.08)'}
+              onMouseLeave={(e) => e.currentTarget.style.background = isDark ? 'rgba(255,255,255,0.06)' : 'rgba(0,0,0,0.04)'}
+            >
+              Cancel
+            </button>
+            <button
+              onClick={() => { setShowLogoutModal(false); logout(); }}
+              style={{
+                flex: 1, padding: '10px 0', borderRadius: 12,
+                fontSize: 13, fontWeight: 600, cursor: 'pointer',
+                border: 'none', background: '#ef4444', color: 'white',
+              }}
+              onMouseEnter={(e) => e.currentTarget.style.background = '#dc2626'}
+              onMouseLeave={(e) => e.currentTarget.style.background = '#ef4444'}
+            >
+              Sign out
+            </button>
+          </div>
+        </div>
+      </div>,
+      document.body
+    )}
+    </>
   );
 }
