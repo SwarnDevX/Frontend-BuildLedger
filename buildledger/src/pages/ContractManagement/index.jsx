@@ -12,7 +12,7 @@ import {
 import {
   getAllContracts, getMyContracts, createContract, updateContract, deleteContract,
   updateContractStatus, getContractTerms, addContractTerm,
-  getContractsByVendor, vendorContractResponse,
+  getContractsByVendor, vendorRespondToContract,
 } from '../../api/contracts';
 import { getAllVendors } from '../../api/vendors';
 import { getAllProjects } from '../../api/projects';
@@ -563,7 +563,7 @@ export default function ContractManagement() {
   const handleVendorAccept = async (contractId) => {
     setSaving(true);
     try {
-      await vendorContractResponse(contractId, 'ACCEPT', vendorRecord.vendorId);
+      await vendorRespondToContract(contractId, 'ACCEPT', vendorRecord.vendorId);
       toast.success('Contract accepted');
       fetchData();
     } catch (err) { toast.error(err.response?.data?.message || 'Failed to accept contract'); }
@@ -574,7 +574,7 @@ export default function ContractManagement() {
     if (!rejectRemarks.trim()) { toast.error('Rejection reason is required'); return; }
     setSaving(true);
     try {
-      await vendorContractResponse(rejectContractId, 'REJECT', vendorRecord.vendorId, rejectRemarks.trim());
+      await vendorRespondToContract(rejectContractId, 'REJECT', vendorRecord.vendorId, rejectRemarks.trim());
       toast.success('Contract rejected');
       setRejectContractId(null);
       setRejectRemarks('');
