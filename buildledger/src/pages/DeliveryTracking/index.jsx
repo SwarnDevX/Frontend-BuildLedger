@@ -12,7 +12,7 @@ import { getAllServices, createService, updateServiceStatus } from '../../api/se
 import { getAllContracts, getContractsByVendor } from '../../api/contracts';
 import { getAllVendors } from '../../api/vendors';
 import { getDeliveryPageSummary } from '../../api/reports';
-import { checkCompliance } from '../../api/compliance';
+import { checkCompliance, getAllCompliance } from '../../api/compliance';
 import { useAuth } from '../../context/AuthContext';
 import toast from 'react-hot-toast';
 
@@ -163,6 +163,7 @@ export default function DeliveryTracking() {
   const [dErrors, setDErrors] = useState({});
   const [sErrors, setSErrors] = useState({});
   const [complianceBlock, setComplianceBlock] = useState(null);
+  const [complianceRecords, setComplianceRecords] = useState([]);
 
   const canCreate = ['ADMIN', 'VENDOR'].includes(user?.role);
   const today     = new Date().toISOString().split('T')[0];
@@ -170,13 +171,14 @@ export default function DeliveryTracking() {
   const fetchData = async () => {
     setLoading(true);
     try {
-      const [d, s, c, sum] = await Promise.allSettled([
-        getAllDeliveries(), getAllServices(), getAllContracts(), getDeliveryPageSummary(),
+      const [d, s, c, sum, comp] = await Promise.allSettled([
+        getAllDeliveries(), getAllServices(), getAllContracts(), getDeliveryPageSummary(), getAllCompliance(),
       ]);
       const allDeliveries = d.status === 'fulfilled' ? (d.value.data?.data || []) : [];
       const allServices   = s.status === 'fulfilled' ? (s.value.data?.data || []) : [];
       const allContracts  = c.status === 'fulfilled' ? (c.value.data?.data || []) : [];
       setDeliverySummary(sum.status === 'fulfilled' ? sum.value.data : null);
+      setComplianceRecords(comp.status === 'fulfilled' ? (comp.value.data?.data || []) : []);
 
       if (user?.role === 'VENDOR') {
         // Scope everything to this vendor's contracts only
@@ -316,8 +318,26 @@ export default function DeliveryTracking() {
     </div>
   );
 
-  const filteredDeliveries = filter === 'All' ? deliveries : deliveries.filter(d => d.status === filter);
-  const filteredServices   = svcFilter === 'All' ? services : services.filter(s => s.status === svcFilter);
+  const failedDeliveryIds = new Set(
+    complianceRecords
+      .filter(r => r.type === 'DELIVERY_CHECK' && r.status === 'FAILED')
+      .map(r => Number(r.referenceId))
+  );
+  const failedServiceIds = new Set(
+    complianceRecords
+      .filter(r => r.type === 'SERVICE_CHECK' && r.status === 'FAILED')
+      .map(r => Number(r.referenceId))
+  );
+
+  const deliveryEffStatus = d => failedDeliveryIds.has(d.deliveryId) ? 'REJECTED'   : d.status;
+  const serviceEffStatus  = s => failedServiceIds.has(s.serviceId)   ? 'UNVERIFIED' : s.status;
+
+  const filteredDeliveries = filter === 'All'
+    ? deliveries
+    : deliveries.filter(d => deliveryEffStatus(d) === filter);
+  const filteredServices = svcFilter === 'All'
+    ? services
+    : services.filter(s => serviceEffStatus(s) === svcFilter);
 
   return (
     <div className="animate-fadeIn space-y-5">
@@ -391,8 +411,9 @@ export default function DeliveryTracking() {
                       <TableCell colSpan={9} className="py-10 text-center text-sm text-slate-400">No deliveries found</TableCell>
                     </TableRow>
                   ) : filteredDeliveries.map(d => {
-                    const cfg      = DELIVERY_STATUS_MAP[d.status] || DELIVERY_STATUS_MAP.PENDING;
-                    const progress = deliveryProgress(d.status);
+                    const effStatus = deliveryEffStatus(d);
+                    const cfg       = DELIVERY_STATUS_MAP[effStatus] || DELIVERY_STATUS_MAP.PENDING;
+                    const progress  = deliveryProgress(effStatus);
                     return (
                       <TableRow key={d.deliveryId}>
                         <TableCell className="text-xs font-mono text-blue-600 dark:text-blue-400 font-semibold">#{d.deliveryId}</TableCell>
@@ -407,18 +428,18 @@ export default function DeliveryTracking() {
                           {d.quantity ? `${d.quantity}${d.unit ? ` ${d.unit}` : ''}` : '—'}
                         </TableCell>
                         <TableCell className="text-xs text-slate-500 dark:text-slate-400 whitespace-nowrap">{d.date || '—'}</TableCell>
-                        <TableCell><Badge status={d.status} /></TableCell>
+                        <TableCell><Badge status={effStatus} /></TableCell>
                         <TableCell className="w-28">
                           <ProgressBar value={progress} color={cfg.color} showLabel />
                         </TableCell>
                         <TableCell>
-                          <Stepper status={d.status} steps={DELIVERY_STEPS} />
+                          <Stepper status={effStatus} steps={DELIVERY_STEPS} />
                         </TableCell>
                         <TableCell>
                           <ActionButtons
                             transitions={DELIVERY_TRANSITIONS}
                             roleRules={DELIVERY_ROLE_RULES}
-                            currentStatus={d.status}
+                            currentStatus={effStatus}
                             role={user?.role}
                             onTransition={(_, next) => handleDeliveryTransition(d.deliveryId, next)}
                             loadingKey={updating[`d-${d.deliveryId}`]}
@@ -471,8 +492,9 @@ export default function DeliveryTracking() {
                       <TableCell colSpan={7} className="py-10 text-center text-sm text-slate-400">No services found</TableCell>
                     </TableRow>
                   ) : filteredServices.map(s => {
-                    const progress = serviceProgress(s.status);
-                    const cfg      = SERVICE_STATUS_MAP[s.status] || SERVICE_STATUS_MAP.PENDING;
+                    const effStatus = serviceEffStatus(s);
+                    const cfg       = SERVICE_STATUS_MAP[effStatus] || SERVICE_STATUS_MAP.PENDING;
+                    const progress  = serviceProgress(effStatus);
                     return (
                       <TableRow key={s.serviceId}>
                         <TableCell className="text-xs font-mono text-blue-600 dark:text-blue-400 font-semibold">#{s.serviceId}</TableCell>
@@ -484,7 +506,7 @@ export default function DeliveryTracking() {
                           <span className="truncate block">{contractLabel(contracts, s.contractId)}</span>
                         </TableCell>
                         <TableCell className="text-xs text-slate-500 dark:text-slate-400 whitespace-nowrap">{s.completionDate || '—'}</TableCell>
-                        <TableCell><Badge status={s.status} /></TableCell>
+                        <TableCell><Badge status={effStatus} /></TableCell>
                         <TableCell className="w-28">
                           <ProgressBar value={progress} color={cfg.color} showLabel />
                         </TableCell>
@@ -492,7 +514,7 @@ export default function DeliveryTracking() {
                           <ActionButtons
                             transitions={SERVICE_TRANSITIONS}
                             roleRules={SERVICE_ROLE_RULES}
-                            currentStatus={s.status}
+                            currentStatus={effStatus}
                             role={user?.role}
                             onTransition={(_, next) => handleServiceTransition(s.serviceId, next)}
                             loadingKey={updating[`s-${s.serviceId}`]}

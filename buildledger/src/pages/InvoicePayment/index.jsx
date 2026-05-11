@@ -10,7 +10,8 @@ import {
 } from '../../components/ui';
 import { getAllInvoices, createInvoice, approveInvoice, rejectInvoice } from '../../api/invoices';
 import { getAllPayments, processPayment, updatePaymentStatus } from '../../api/payments';
-import { getAllContracts } from '../../api/contracts';
+import { getAllContracts, getContractsByVendor } from '../../api/contracts';
+import { getAllVendors } from '../../api/vendors';
 import { getInvoicePageSummary } from '../../api/reports';
 import { useAuth } from '../../context/AuthContext';
 import { useTheme } from '../../context/ThemeContext';
@@ -114,19 +115,42 @@ export default function InvoicePayment() {
 
   const canApprove = ['ADMIN', 'FINANCE_OFFICER'].includes(user?.role);
   const canCreate  = ['ADMIN', 'VENDOR'].includes(user?.role);
+  const isVendor   = user?.role === 'VENDOR';
   const today    = new Date().toISOString().split('T')[0];
   const tomorrow = new Date(Date.now() + 86400000).toISOString().split('T')[0];
 
   const fetchData = async () => {
     setLoading(true);
     try {
-      const [inv, pay, con, sum] = await Promise.allSettled([
-        getAllInvoices(), getAllPayments(), getAllContracts(), getInvoicePageSummary(),
-      ]);
-      setInvoices(inv.status === 'fulfilled'  ? (inv.value.data?.data || []) : []);
-      setPayments(pay.status === 'fulfilled'  ? (pay.value.data?.data || []) : []);
-      setContracts(con.status === 'fulfilled' ? (con.value.data?.data || []) : []);
-      setInvoiceSummary(sum.status === 'fulfilled' ? sum.value.data : null);
+      if (isVendor) {
+        const vendorRes  = await getAllVendors();
+        const allVendors = vendorRes.data?.data || [];
+        const mine       = allVendors.find(v => v.userId === user.userId || v.username === user.username);
+        if (mine) {
+          const [vcRes, invRes] = await Promise.allSettled([
+            getContractsByVendor(mine.vendorId),
+            getAllInvoices(),
+          ]);
+          const myContracts = vcRes.status === 'fulfilled' ? (vcRes.value.data?.data || []) : [];
+          const allInvoices = invRes.status === 'fulfilled' ? (invRes.value.data?.data || []) : [];
+          const contractIds = new Set(myContracts.map(c => c.contractId));
+          setContracts(myContracts.filter(c => c.status === 'ACTIVE'));
+          setInvoices(allInvoices.filter(i => contractIds.has(i.contractId)));
+        } else {
+          setContracts([]);
+          setInvoices([]);
+        }
+        setPayments([]);
+        setInvoiceSummary(null);
+      } else {
+        const [inv, pay, con, sum] = await Promise.allSettled([
+          getAllInvoices(), getAllPayments(), getAllContracts(), getInvoicePageSummary(),
+        ]);
+        setInvoices(inv.status === 'fulfilled'  ? (inv.value.data?.data || []) : []);
+        setPayments(pay.status === 'fulfilled'  ? (pay.value.data?.data || []) : []);
+        setContracts(con.status === 'fulfilled' ? (con.value.data?.data || []) : []);
+        setInvoiceSummary(sum.status === 'fulfilled' ? sum.value.data : null);
+      }
     } catch { toast.error('Failed to load invoices'); }
     finally { setLoading(false); }
   };
@@ -226,8 +250,8 @@ export default function InvoicePayment() {
   return (
     <div className="animate-fadeIn space-y-5">
       <PageHeader
-        title="Invoices & Payments"
-        subtitle={`${invoices.length} invoices · UNDER_REVIEW → APPROVED → PAID`}
+        title={isVendor ? 'My Invoices' : 'Invoices & Payments'}
+        subtitle={isVendor ? `${invoices.length} invoices` : `${invoices.length} invoices · UNDER_REVIEW → APPROVED → PAID`}
         actions={
           <>
             <Button variant="secondary" size="xs" icon={<RefreshCw size={13} />} onClick={fetchData}>Refresh</Button>
@@ -253,8 +277,8 @@ export default function InvoicePayment() {
         ))}
       </div>
 
-      {/* Chart + Pipeline */}
-      <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
+      {/* Chart + Pipeline — hidden for vendors (aggregate data not relevant to them) */}
+      {!isVendor && <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
         <div className="glass-card p-5">
           <h3 className="text-sm font-semibold text-slate-700 dark:text-slate-200 mb-4">Payment History</h3>
           <ResponsiveContainer width="100%" height={200}>
@@ -280,10 +304,10 @@ export default function InvoicePayment() {
         </div>
         <ApprovalPipeline invoices={invoices} onApprove={handleApprove} onReject={openRejectModal}
           onPayment={openPaymentModal} canApprove={canApprove} isDark={isDark} />
-      </div>
+      </div>}
 
       {/* Invoice Table */}
-      <SectionCard title="All Invoices">
+      <SectionCard title={isVendor ? 'My Invoices' : 'All Invoices'}>
         <div className="overflow-x-auto">
           <Table elevated={false}>
             <TableHead>

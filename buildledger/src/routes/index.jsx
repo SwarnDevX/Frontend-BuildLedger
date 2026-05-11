@@ -14,7 +14,6 @@ import ComplianceAudit from '../pages/ComplianceAudit';
 import AdminPanel from '../pages/AdminPanel';
 import Notifications from '../pages/Notifications';
 import VendorDashboard from '../pages/VendorDashboard';
-import VendorContracts from '../pages/VendorContracts';
 import ProjectManagement from '../pages/ProjectManagement';
 
 export const router = createBrowserRouter([
@@ -51,15 +50,6 @@ export const router = createBrowserRouter([
           </ProtectedRoute>
         ),
       },
-      // Vendor contracts
-      {
-        path: 'vendor/contracts',
-        element: (
-          <ProtectedRoute roles={['VENDOR']}>
-            <VendorContracts />
-          </ProtectedRoute>
-        ),
-      },
       // Vendor management
       {
         path: 'vendors',
@@ -78,16 +68,16 @@ export const router = createBrowserRouter([
           </ProtectedRoute>
         ),
       },
-      // Contracts
+      // Contracts (admin/PM manage, vendors view & respond)
       {
         path: 'contracts',
         element: (
-          <ProtectedRoute roles={['ADMIN', 'PROJECT_MANAGER']}>
+          <ProtectedRoute roles={['ADMIN', 'PROJECT_MANAGER', 'VENDOR']}>
             <ContractManagement />
           </ProtectedRoute>
         ),
       },
-      // Deliveries
+      // Deliveries & Services
       {
         path: 'deliveries',
         element: (
@@ -100,7 +90,7 @@ export const router = createBrowserRouter([
       {
         path: 'invoices',
         element: (
-          <ProtectedRoute roles={['ADMIN', 'FINANCE_OFFICER']}>
+          <ProtectedRoute roles={['ADMIN', 'FINANCE_OFFICER', 'VENDOR']}>
             <InvoicePayment />
           </ProtectedRoute>
         ),
