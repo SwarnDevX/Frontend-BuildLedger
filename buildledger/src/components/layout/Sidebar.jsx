@@ -14,7 +14,7 @@ const ALL_NAV = [
   { icon: Briefcase,        label: 'Projects',     path: '/projects',         roles: ['ADMIN','PROJECT_MANAGER'] },
   { icon: FileText,         label: 'Contracts',    path: '/contracts',        roles: ['ADMIN','PROJECT_MANAGER'] },
   { icon: Truck,            label: 'Deliveries',   path: '/deliveries',       roles: ['ADMIN','PROJECT_MANAGER','VENDOR'] },
-  { icon: CreditCard,       label: 'Invoices',     path: '/invoices',         roles: ['ADMIN','FINANCE_OFFICER'] },
+  { icon: CreditCard,       label: 'Invoices',     path: '/invoices',         roles: ['ADMIN','FINANCE_OFFICER','VENDOR'] },
   { icon: ShieldCheck,      label: 'Compliance',   path: '/compliance',       roles: ['ADMIN','COMPLIANCE_OFFICER','PROJECT_MANAGER'] },
   { icon: Settings,         label: 'Admin',        path: '/admin',            roles: ['ADMIN'] },
   { icon: Bell,             label: 'Notifications',path: '/notifications',    roles: ['ADMIN','PROJECT_MANAGER','FINANCE_OFFICER','COMPLIANCE_OFFICER','VENDOR'] },

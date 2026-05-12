@@ -10,7 +10,7 @@ import {
 } from '../../components/ui';
 import { getAllInvoices, createInvoice, approveInvoice, rejectInvoice } from '../../api/invoices';
 import { getAllPayments, processPayment, updatePaymentStatus } from '../../api/payments';
-import { getAllContracts } from '../../api/contracts';
+import { getAllContracts, getVendorContracts } from '../../api/contracts';
 import { getInvoicePageSummary } from '../../api/reports';
 import { useAuth } from '../../context/AuthContext';
 import { useTheme } from '../../context/ThemeContext';
@@ -112,6 +112,7 @@ export default function InvoicePayment() {
   const [iErrors, setIErrors]         = useState({});
   const [pErrors, setPErrors]         = useState({});
 
+  const isVendor   = user?.role === 'VENDOR';
   const canApprove = ['ADMIN', 'FINANCE_OFFICER'].includes(user?.role);
   const canCreate  = ['ADMIN', 'VENDOR'].includes(user?.role);
   const today    = new Date().toISOString().split('T')[0];
@@ -120,13 +121,20 @@ export default function InvoicePayment() {
   const fetchData = async () => {
     setLoading(true);
     try {
+      const contractFetch = isVendor ? getVendorContracts() : getAllContracts();
       const [inv, pay, con, sum] = await Promise.allSettled([
-        getAllInvoices(), getAllPayments(), getAllContracts(), getInvoicePageSummary(),
+        getAllInvoices(),
+        isVendor ? Promise.resolve({ data: { data: [] } }) : getAllPayments(),
+        contractFetch,
+        isVendor ? Promise.resolve(null) : getInvoicePageSummary(),
       ]);
-      setInvoices(inv.status === 'fulfilled'  ? (inv.value.data?.data || []) : []);
+      const allContracts = con.status === 'fulfilled' ? (con.value.data?.data || []) : [];
+      const allInvoices  = inv.status === 'fulfilled'  ? (inv.value.data?.data || []) : [];
+      const vendorIds    = isVendor ? new Set(allContracts.map(c => c.contractId)) : null;
+      setContracts(allContracts);
+      setInvoices(isVendor ? allInvoices.filter(i => vendorIds.has(i.contractId)) : allInvoices);
       setPayments(pay.status === 'fulfilled'  ? (pay.value.data?.data || []) : []);
-      setContracts(con.status === 'fulfilled' ? (con.value.data?.data || []) : []);
-      setInvoiceSummary(sum.status === 'fulfilled' ? sum.value.data : null);
+      setInvoiceSummary(sum.status === 'fulfilled' && sum.value ? sum.value.data : null);
     } catch { toast.error('Failed to load invoices'); }
     finally { setLoading(false); }
   };
@@ -207,11 +215,19 @@ export default function InvoicePayment() {
 
   const trendData = invoiceSummary?.paymentTrendData ?? [];
 
+  const vendorLocalSummary = isVendor ? {
+    totalInvoiced: invoices.reduce((s, i) => s + (i.amount || 0), 0),
+    paid:          invoices.filter(i => i.status === 'PAID').reduce((s, i) => s + (i.amount || 0), 0),
+    underReview:   invoices.filter(i => i.status === 'UNDER_REVIEW').reduce((s, i) => s + (i.amount || 0), 0),
+    overdue:       invoices.filter(i => i.status !== 'PAID' && i.dueDate && new Date(i.dueDate) < new Date()).reduce((s, i) => s + (i.amount || 0), 0),
+  } : null;
+  const effectiveSummary = vendorLocalSummary ?? invoiceSummary;
+
   const summaryCards = [
-    { label: 'Total Invoiced', value: `$${((invoiceSummary?.totalInvoiced ?? 0) / 1000).toFixed(0)}K`, icon: DollarSign,    color: '#3b82f6', bg: 'rgba(59,130,246,0.1)' },
-    { label: 'Paid',           value: `$${((invoiceSummary?.paid          ?? 0) / 1000).toFixed(0)}K`, icon: CheckCircle2,  color: '#22C55E', bg: 'rgba(34,197,94,0.1)'  },
-    { label: 'Under Review',   value: `$${((invoiceSummary?.underReview   ?? 0) / 1000).toFixed(0)}K`, icon: Clock,         color: '#F59E0B', bg: 'rgba(245,158,11,0.1)' },
-    { label: 'Overdue',        value: `$${((invoiceSummary?.overdue       ?? 0) / 1000).toFixed(0)}K`, icon: AlertTriangle, color: '#EF4444', bg: 'rgba(239,68,68,0.1)'  },
+    { label: 'Total Invoiced', value: `$${((effectiveSummary?.totalInvoiced ?? 0) / 1000).toFixed(0)}K`, icon: DollarSign,    color: '#3b82f6', bg: 'rgba(59,130,246,0.1)' },
+    { label: 'Paid',           value: `$${((effectiveSummary?.paid          ?? 0) / 1000).toFixed(0)}K`, icon: CheckCircle2,  color: '#22C55E', bg: 'rgba(34,197,94,0.1)'  },
+    { label: 'Under Review',   value: `$${((effectiveSummary?.underReview   ?? 0) / 1000).toFixed(0)}K`, icon: Clock,         color: '#F59E0B', bg: 'rgba(245,158,11,0.1)' },
+    { label: 'Overdue',        value: `$${((effectiveSummary?.overdue       ?? 0) / 1000).toFixed(0)}K`, icon: AlertTriangle, color: '#EF4444', bg: 'rgba(239,68,68,0.1)'  },
   ];
 
   const axisColor = isDark ? '#8aa4b6' : '#94a3b8';
@@ -227,7 +243,10 @@ export default function InvoicePayment() {
     <div className="animate-fadeIn space-y-5">
       <PageHeader
         title="Invoices & Payments"
-        subtitle={`${invoices.length} invoices · UNDER_REVIEW → APPROVED → PAID`}
+        subtitle={isVendor
+          ? `${invoices.length} invoice${invoices.length !== 1 ? 's' : ''} submitted by you`
+          : `${invoices.length} invoices · UNDER_REVIEW → APPROVED → PAID`
+        }
         actions={
           <>
             <Button variant="secondary" size="xs" icon={<RefreshCw size={13} />} onClick={fetchData}>Refresh</Button>
@@ -253,34 +272,36 @@ export default function InvoicePayment() {
         ))}
       </div>
 
-      {/* Chart + Pipeline */}
-      <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
-        <div className="glass-card p-5">
-          <h3 className="text-sm font-semibold text-slate-700 dark:text-slate-200 mb-4">Payment History</h3>
-          <ResponsiveContainer width="100%" height={200}>
-            <BarChart data={trendData}>
-              <CartesianGrid strokeDasharray="3 3" stroke={gridColor} />
-              <XAxis dataKey="month" tick={{ fontSize: 11, fill: axisColor }} axisLine={false} tickLine={false} />
-              <YAxis tick={{ fontSize: 11, fill: axisColor }} axisLine={false} tickLine={false} tickFormatter={v => `$${v/1000}K`} />
-              <Tooltip content={({ active, payload, label }) => active && payload?.length ? (
-                <div className="glass-card px-3 py-2 text-xs shadow-lg">
-                  <p className="font-semibold text-slate-700 dark:text-slate-200 mb-1">{label}</p>
-                  <p className="text-green-500">Completed: ${(payload[0]?.value || 0).toLocaleString()}</p>
-                  <p className="text-amber-500">Pending: ${(payload[1]?.value || 0).toLocaleString()}</p>
-                </div>
-              ) : null} />
-              <Bar dataKey="paid"    fill="#22C55E" radius={[4,4,0,0]} />
-              <Bar dataKey="pending" fill="#F59E0B" radius={[4,4,0,0]} />
-            </BarChart>
-          </ResponsiveContainer>
-          <div className="flex gap-4 mt-2 justify-center">
-            <div className="flex items-center gap-1.5 text-xs text-slate-500 dark:text-slate-400"><div className="w-2.5 h-2.5 rounded-full bg-green-500" />Completed</div>
-            <div className="flex items-center gap-1.5 text-xs text-slate-500 dark:text-slate-400"><div className="w-2.5 h-2.5 rounded-full bg-amber-500" />Pending</div>
+      {/* Chart + Pipeline — admin/finance only */}
+      {!isVendor && (
+        <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
+          <div className="glass-card p-5">
+            <h3 className="text-sm font-semibold text-slate-700 dark:text-slate-200 mb-4">Payment History</h3>
+            <ResponsiveContainer width="100%" height={200}>
+              <BarChart data={trendData}>
+                <CartesianGrid strokeDasharray="3 3" stroke={gridColor} />
+                <XAxis dataKey="month" tick={{ fontSize: 11, fill: axisColor }} axisLine={false} tickLine={false} />
+                <YAxis tick={{ fontSize: 11, fill: axisColor }} axisLine={false} tickLine={false} tickFormatter={v => `$${v/1000}K`} />
+                <Tooltip content={({ active, payload, label }) => active && payload?.length ? (
+                  <div className="glass-card px-3 py-2 text-xs shadow-lg">
+                    <p className="font-semibold text-slate-700 dark:text-slate-200 mb-1">{label}</p>
+                    <p className="text-green-500">Completed: ${(payload[0]?.value || 0).toLocaleString()}</p>
+                    <p className="text-amber-500">Pending: ${(payload[1]?.value || 0).toLocaleString()}</p>
+                  </div>
+                ) : null} />
+                <Bar dataKey="paid"    fill="#22C55E" radius={[4,4,0,0]} />
+                <Bar dataKey="pending" fill="#F59E0B" radius={[4,4,0,0]} />
+              </BarChart>
+            </ResponsiveContainer>
+            <div className="flex gap-4 mt-2 justify-center">
+              <div className="flex items-center gap-1.5 text-xs text-slate-500 dark:text-slate-400"><div className="w-2.5 h-2.5 rounded-full bg-green-500" />Completed</div>
+              <div className="flex items-center gap-1.5 text-xs text-slate-500 dark:text-slate-400"><div className="w-2.5 h-2.5 rounded-full bg-amber-500" />Pending</div>
+            </div>
           </div>
+          <ApprovalPipeline invoices={invoices} onApprove={handleApprove} onReject={openRejectModal}
+            onPayment={openPaymentModal} canApprove={canApprove} isDark={isDark} />
         </div>
-        <ApprovalPipeline invoices={invoices} onApprove={handleApprove} onReject={openRejectModal}
-          onPayment={openPaymentModal} canApprove={canApprove} isDark={isDark} />
-      </div>
+      )}
 
       {/* Invoice Table */}
       <SectionCard title="All Invoices">

@@ -100,7 +100,7 @@ export const router = createBrowserRouter([
       {
         path: 'invoices',
         element: (
-          <ProtectedRoute roles={['ADMIN', 'FINANCE_OFFICER']}>
+          <ProtectedRoute roles={['ADMIN', 'FINANCE_OFFICER', 'VENDOR']}>
             <InvoicePayment />
           </ProtectedRoute>
         ),
