@@ -19,7 +19,7 @@ import { useAuth } from '../../context/AuthContext';
 import toast from 'react-hot-toast';
 
 const DOC_TYPES = ['PAN_CARD', 'GST_CERTIFICATE', 'TRADE_LICENSE', 'MSME_CERTIFICATE', 'BANK_STATEMENT', 'INCORPORATION_CERTIFICATE', 'OTHER'];
-const statusFilters = ['All', 'ACTIVE', 'PENDING', 'REJECTED'];
+const statusFilters = ['All', 'ACTIVE', 'PENDING', 'SUSPENDED'];
 const STATUS_FILTER_OPTIONS = statusFilters.map(s => ({ key: s, label: s }));
 
 const toArray = (value) => {

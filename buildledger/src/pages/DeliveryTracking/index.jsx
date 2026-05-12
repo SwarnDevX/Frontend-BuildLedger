@@ -1,5 +1,5 @@
 import { useState, useEffect } from 'react';
-import { CheckCircle2, Clock, Truck, Package, RotateCcw, Calendar, Loader2, Plus, Wrench, AlertTriangle } from 'lucide-react';
+import { CheckCircle2, Clock, Truck, Package, RotateCcw, Calendar, Loader2, Plus, Wrench } from 'lucide-react';
 import Badge from '../../components/ui/Badge';
 import ProgressBar from '../../components/ui/ProgressBar';
 import Modal from '../../components/ui/Modal';
@@ -7,7 +7,7 @@ import {
   Button, FormInput, FormSelect, FormTextarea, FilterPills, PageHeader,
   Table, TableHead, TableHeader, TableBody, TableRow, TableCell,
 } from '../../components/ui';
-import { getAllDeliveries, createDelivery, updateDeliveryStatus, getContractBudgetSummary } from '../../api/deliveries';
+import { getAllDeliveries, createDelivery, updateDeliveryStatus } from '../../api/deliveries';
 import { getAllServices, createService, updateServiceStatus } from '../../api/services';
 import { getAllContracts, getVendorContracts } from '../../api/contracts';
 import { useAuth } from '../../context/AuthContext';
@@ -20,82 +20,6 @@ function formatINR(amount) {
   return new Intl.NumberFormat('en-IN', {
     style: 'currency', currency: 'INR', maximumFractionDigits: 0,
   }).format(Number(amount));
-}
-
-// ─── Contract Budget Breakdown ────────────────────────────────────────────────
-// Same pattern as BudgetBreakdown in ContractManagement but at contract level.
-// Calls GET /deliveries/contract/{id}/budget-summary
-// remaining = contractValue - sum(delivery prices) - sum(service prices)
-
-function ContractBudgetBreakdown({ contractId, currentPrice = 0, onBudgetStatus }) {
-  const [summary, setSummary] = useState(null);
-  const [loading, setLoading] = useState(false);
-
-  useEffect(() => {
-    if (!contractId) { setSummary(null); onBudgetStatus?.(false); return; }
-    setLoading(true);
-    getContractBudgetSummary(contractId)
-      .then(res => setSummary(res.data?.data ?? null))
-      .catch(() => setSummary(null))
-      .finally(() => setLoading(false));
-  }, [contractId]);
-
-  useEffect(() => {
-    if (!summary) { onBudgetStatus?.(false); return; }
-    const val      = Number(currentPrice || 0);
-    const avail    = Number(summary.remaining ?? 0);
-    const exceeded = val > 0 && val > avail;
-    onBudgetStatus?.(exceeded);
-  }, [summary, currentPrice]);
-
-  if (!contractId) return null;
-
-  const available = summary?.remaining ?? null;
-  const val       = Number(currentPrice || 0);
-  const afterThis = available !== null ? available - val : null;
-  const isOver    = afterThis !== null && val > 0 && afterThis < 0;
-
-  return (
-    <div className="mt-1 space-y-1">
-      {loading ? (
-        <p className="text-xs text-slate-400">Calculating contract budget…</p>
-      ) : available !== null && (
-        <>
-          <div className="grid grid-cols-3 gap-2 p-2 rounded-lg"
-            style={{ background: 'rgba(37,99,235,0.05)', border: '1px solid rgba(37,99,235,0.1)' }}>
-            <div>
-              <p className="text-[10px] text-slate-400 font-semibold uppercase">Contract Value</p>
-              <p className="text-xs font-bold text-slate-700 dark:text-slate-200">{formatINR(summary?.contractValue)}</p>
-            </div>
-            <div>
-              <p className="text-[10px] text-slate-400 font-semibold uppercase">Allocated</p>
-              <p className="text-xs font-bold text-amber-600">{formatINR(summary?.spent)}</p>
-            </div>
-            <div>
-              <p className="text-[10px] text-slate-400 font-semibold uppercase">Remaining</p>
-              <p className={`text-xs font-bold ${summary?.overBudget ? 'text-red-500' : 'text-green-600'}`}>
-                {formatINR(available)}
-              </p>
-            </div>
-          </div>
-          {val > 0 && (
-            <div className={`flex items-center gap-1.5 px-2 py-1.5 rounded-lg text-xs font-semibold ${
-              isOver
-                ? 'bg-red-50 dark:bg-red-900/20 text-red-600 border border-red-200 dark:border-red-800'
-                : 'bg-green-50 dark:bg-green-900/20 text-green-700 border border-green-200 dark:border-green-800'
-            }`}>
-              {isOver
-                ? <AlertTriangle size={12} className="shrink-0" />
-                : <CheckCircle2 size={12} className="shrink-0" />}
-              {isOver
-                ? `Exceeds budget by ${formatINR(Math.abs(afterThis))} — reduce price or contact admin`
-                : `After this: ${formatINR(afterThis)} remaining`}
-            </div>
-          )}
-        </>
-      )}
-    </div>
-  );
 }
 
 // ─── Status maps ──────────────────────────────────────────────────────────────
@@ -214,8 +138,8 @@ function ActionButtons({ transitions, roleRules, currentStatus, role, onTransiti
   );
 }
 
-const EMPTY_DELIVERY = { contractId: '', item: '', quantity: '', unit: '', price: '', date: '', remarks: '' };
-const EMPTY_SERVICE  = { contractId: '', description: '', price: '', completionDate: '', remarks: '' };
+const EMPTY_DELIVERY = { contractId: '', item: '', quantity: '', unit: '', date: '', remarks: '' };
+const EMPTY_SERVICE  = { contractId: '', description: '', completionDate: '', remarks: '' };
 
 const DELIVERY_FILTER_OPTIONS = ['All', ...Object.keys(DELIVERY_STATUS_MAP)].map(s => ({
   key: s, label: DELIVERY_STATUS_MAP[s]?.label || s,
@@ -244,8 +168,6 @@ export default function DeliveryTracking() {
   const [updating, setUpdating]     = useState({});
   const [dErrors, setDErrors]       = useState({});
   const [sErrors, setSErrors]       = useState({});
-  const [dBudgetExceeded, setDBudgetExceeded] = useState(false);
-  const [sBudgetExceeded, setSBudgetExceeded] = useState(false);
 
   const canCreate = ['ADMIN', 'VENDOR'].includes(user?.role);
   const today     = new Date().toISOString().split('T')[0];
@@ -271,12 +193,10 @@ export default function DeliveryTracking() {
 
   const handleCreateDelivery = async () => {
     const e = {};
-    if (!formD.contractId)                    e.contractId = 'Please select a contract';
-    if (!formD.item.trim())                   e.item       = 'Item is required';
-    if (!formD.quantity)                      e.quantity   = 'Quantity is required';
-    if (!formD.price)                         e.price      = 'Price is required';
-    if (formD.price && Number(formD.price) <= 0) e.price   = 'Price must be greater than 0';
-    if (!formD.date)                          e.date       = 'Delivery date is required';
+    if (!formD.contractId) e.contractId = 'Please select a contract';
+    if (!formD.item.trim()) e.item      = 'Item is required';
+    if (!formD.quantity)    e.quantity  = 'Quantity is required';
+    if (!formD.date)        e.date      = 'Delivery date is required';
 
     // Validate delivery date is within contract period
     if (formD.date && formD.contractId) {
@@ -289,7 +209,6 @@ export default function DeliveryTracking() {
       }
     }
 
-    if (dBudgetExceeded) e.price = 'Price exceeds remaining contract budget';
     setDErrors(e);
     if (Object.keys(e).length) return;
 
@@ -299,13 +218,12 @@ export default function DeliveryTracking() {
         contractId: Number(formD.contractId),
         item:       formD.item,
         quantity:   Number(formD.quantity),
-        unit:       formD.unit    || undefined,
-        price:      Number(formD.price),
+        unit:       formD.unit  || undefined,
         date:       formD.date,
         remarks:    formD.remarks || undefined,
       });
       toast.success('Delivery created');
-      setShowCreateD(false); setFormD(EMPTY_DELIVERY); setDErrors({}); setDBudgetExceeded(false);
+      setShowCreateD(false); setFormD(EMPTY_DELIVERY); setDErrors({});
       fetchData();
     } catch (err) { showErrors(err); }
     finally { setSaving(false); }
@@ -325,11 +243,9 @@ export default function DeliveryTracking() {
 
   const handleCreateService = async () => {
     const e = {};
-    if (!formS.contractId)                                    e.contractId     = 'Please select a contract';
-    if (!formS.description || formS.description.trim().length < 10) e.description = 'Description must be at least 10 characters';
-    if (!formS.price)                                         e.price          = 'Price is required';
-    if (formS.price && Number(formS.price) <= 0)              e.price          = 'Price must be greater than 0';
-    if (!formS.completionDate)                                e.completionDate = 'Completion date is required';
+    if (!formS.contractId)                                         e.contractId     = 'Please select a contract';
+    if (!formS.description || formS.description.trim().length < 10) e.description   = 'Description must be at least 10 characters';
+    if (!formS.completionDate)                                      e.completionDate = 'Completion date is required';
 
     // Validate completion date is within contract period
     if (formS.completionDate && formS.contractId) {
@@ -342,7 +258,6 @@ export default function DeliveryTracking() {
       }
     }
 
-    if (sBudgetExceeded) e.price = 'Price exceeds remaining contract budget';
     setSErrors(e);
     if (Object.keys(e).length) return;
 
@@ -351,12 +266,11 @@ export default function DeliveryTracking() {
       await createService({
         contractId:     Number(formS.contractId),
         description:    formS.description,
-        price:          Number(formS.price),
         completionDate: formS.completionDate,
         remarks:        formS.remarks || undefined,
       });
       toast.success('Service created');
-      setShowCreateS(false); setFormS(EMPTY_SERVICE); setSErrors({}); setSBudgetExceeded(false);
+      setShowCreateS(false); setFormS(EMPTY_SERVICE); setSErrors({});
       fetchData();
     } catch (err) { showErrors(err); }
     finally { setSaving(false); }
@@ -576,11 +490,11 @@ export default function DeliveryTracking() {
 
       {/* ── Create Delivery Modal ── */}
       <Modal open={showCreateD}
-        onClose={() => { setShowCreateD(false); setFormD(EMPTY_DELIVERY); setDErrors({}); setDBudgetExceeded(false); }}
+        onClose={() => { setShowCreateD(false); setFormD(EMPTY_DELIVERY); setDErrors({}); }}
         title="Create Delivery">
         <div className="space-y-4">
           <FormSelect label="Contract" required value={formD.contractId}
-            onChange={e => { setD('contractId')(e); setDBudgetExceeded(false); setFormD(p => ({ ...p, contractId: e.target.value, date: '' })); if (e.target.value) setDErrors(p => ({ ...p, contractId: '', date: '' })); }}
+            onChange={e => { setFormD(p => ({ ...p, contractId: e.target.value, date: '' })); if (e.target.value) setDErrors(p => ({ ...p, contractId: '', date: '' })); }}
             error={dErrors.contractId}
             hint={contracts.filter(c => c.status === 'ACTIVE').length === 0 ? 'No active contracts.' : ''}>
             <option value="">Select contract…</option>
@@ -601,21 +515,6 @@ export default function DeliveryTracking() {
               onChange={e => { setD('quantity')(e); if (e.target.value) setDErrors(p => ({ ...p, quantity: '' })); }}
               placeholder="0.00" error={dErrors.quantity} />
             <FormInput label="Unit" value={formD.unit} onChange={setD('unit')} placeholder="tons, kg, pcs…" />
-          </div>
-
-          {/* Price — with live contract budget breakdown */}
-          <div>
-            <FormInput label="Price (₹)" required type="number" min="0.01" step="0.01"
-              value={formD.price}
-              onChange={e => { setD('price')(e); if (e.target.value) setDErrors(p => ({ ...p, price: '' })); }}
-              placeholder="0.00"
-              hint="This price will be used for delivery invoice generation"
-              error={dErrors.price} />
-            <ContractBudgetBreakdown
-              contractId={formD.contractId ? Number(formD.contractId) : null}
-              currentPrice={formD.price}
-              onBudgetStatus={setDBudgetExceeded}
-            />
           </div>
 
           {/* Delivery Date — must be within contract period */}
@@ -640,9 +539,8 @@ export default function DeliveryTracking() {
 
           <div className="flex gap-2 justify-end pt-2">
             <Button variant="secondary" size="xs"
-              onClick={() => { setShowCreateD(false); setFormD(EMPTY_DELIVERY); setDErrors({}); setDBudgetExceeded(false); }}>Cancel</Button>
-            <Button variant="primary" size="xs" onClick={handleCreateDelivery} loading={saving}
-              disabled={saving || dBudgetExceeded}>
+              onClick={() => { setShowCreateD(false); setFormD(EMPTY_DELIVERY); setDErrors({}); }}>Cancel</Button>
+            <Button variant="primary" size="xs" onClick={handleCreateDelivery} loading={saving} disabled={saving}>
               Create Delivery
             </Button>
           </div>
@@ -670,21 +568,6 @@ export default function DeliveryTracking() {
             onChange={e => { setS('description')(e); if (e.target.value.trim().length >= 10) setSErrors(p => ({ ...p, description: '' })); }}
             rows={3} placeholder="Describe the service to be provided…" error={sErrors.description} />
 
-          {/* Price — with live contract budget breakdown */}
-          <div>
-            <FormInput label="Price (₹)" required type="number" min="0.01" step="0.01"
-              value={formS.price}
-              onChange={e => { setS('price')(e); if (e.target.value) setSErrors(p => ({ ...p, price: '' })); }}
-              placeholder="0.00"
-              hint="This price will be used for service invoice generation"
-              error={sErrors.price} />
-            <ContractBudgetBreakdown
-              contractId={formS.contractId ? Number(formS.contractId) : null}
-              currentPrice={formS.price}
-              onBudgetStatus={setSBudgetExceeded}
-            />
-          </div>
-
           {/* Completion Date — must be within contract period */}
           {(() => {
             const selectedContract = contracts.find(c => String(c.contractId) === String(formS.contractId));
@@ -707,9 +590,8 @@ export default function DeliveryTracking() {
 
           <div className="flex gap-2 justify-end pt-2">
             <Button variant="secondary" size="xs"
-              onClick={() => { setShowCreateS(false); setFormS(EMPTY_SERVICE); setSErrors({}); setSBudgetExceeded(false); }}>Cancel</Button>
-            <Button variant="primary" size="xs" onClick={handleCreateService} loading={saving}
-              disabled={saving || sBudgetExceeded}>
+              onClick={() => { setShowCreateS(false); setFormS(EMPTY_SERVICE); setSErrors({}); }}>Cancel</Button>
+            <Button variant="primary" size="xs" onClick={handleCreateService} loading={saving} disabled={saving}>
               Create Service
             </Button>
           </div>

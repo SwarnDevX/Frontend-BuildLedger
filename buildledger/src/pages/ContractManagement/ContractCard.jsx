@@ -22,14 +22,13 @@ function useContractBudgetSummary(contractId, status) {
 
 export default function ContractCard({ contract: c, canManage, onClick }) {
   const meta = statusMeta(c.status);
-  const { summary, loading } = useContractBudgetSummary(c.contractId, c.status);
+  const { summary } = useContractBudgetSummary(c.contractId, c.status);
 
-  const isActive    = c.status === 'ACTIVE';
-  const spent       = summary?.spent     ?? 0;
-  const remaining   = summary?.remaining ?? (c.value ?? 0);
-  const total       = summary?.contractValue ?? (c.value ?? 0);
-  const overBudget  = summary?.overBudget ?? false;
-  const spentPct    = total > 0 ? Math.min(Math.round((spent / total) * 100), 100) : 0;
+  const isActive   = c.status === 'ACTIVE';
+  const spent      = summary?.spent          ?? 0;
+  const total      = summary?.contractValue  ?? (c.value ?? 0);
+  const overBudget = summary?.overBudget     ?? false;
+  const spentPct   = total > 0 ? Math.min(Math.round((spent / total) * 100), 100) : 0;
 
   return (
     <div className="glass-card p-5 cursor-pointer hover:shadow-md transition-all" onClick={onClick}>
@@ -57,30 +56,6 @@ export default function ContractCard({ contract: c, canManage, onClick }) {
         <div className="flex justify-between text-xs">
           <span className="text-slate-400">Contract Value</span>
           <span className="text-slate-700 dark:text-slate-200 font-semibold">{formatINR(c.value)}</span>
-        </div>
-
-        <div className="flex justify-between text-xs">
-          <span className="text-slate-400">Spent</span>
-          {!isActive ? (
-            <span className="text-slate-400">—</span>
-          ) : loading ? (
-            <span className="text-slate-400 animate-pulse">loading…</span>
-          ) : (
-            <span className="font-semibold text-amber-600">{formatINR(spent)}</span>
-          )}
-        </div>
-
-        <div className="flex justify-between text-xs">
-          <span className="text-slate-400">Remaining</span>
-          {!isActive ? (
-            <span className="text-slate-400">—</span>
-          ) : loading ? (
-            <span className="text-slate-400 animate-pulse">loading…</span>
-          ) : (
-            <span className={`font-semibold ${overBudget ? 'text-red-500' : 'text-green-600'}`}>
-              {overBudget ? '⚠ ' : ''}{formatINR(remaining)}
-            </span>
-          )}
         </div>
 
         <div className="flex justify-between text-xs">

@@ -354,18 +354,31 @@ export default function InvoicePayment() {
           <FormSelect
             label="Contract"
             required
-            hint="(must be ACTIVE)"
+            hint={isVendor ? '(must be COMPLETED)' : '(must be ACTIVE)'}
             value={formI.contractId}
-            onChange={e => { setI('contractId')(e); if (e.target.value) setIErrors(p => ({ ...p, contractId: '' })); }}
+            onChange={e => {
+              const id = e.target.value;
+              const selected = contracts.find(c => String(c.contractId) === String(id));
+              setFormI(p => ({
+                ...p,
+                contractId: id,
+                amount: selected?.value ? String(selected.value) : p.amount,
+              }));
+              if (id) setIErrors(p => ({ ...p, contractId: '', amount: '' }));
+            }}
             error={iErrors.contractId}
           >
             <option value="">Select contract…</option>
-            {contracts.filter(c => c.status === 'ACTIVE').map(c => (
-              <option key={c.contractId} value={c.contractId}>{c.vendorName || 'Unknown'} — {c.projectName || 'Unknown'} (#{c.contractId})</option>
-            ))}
+            {contracts
+              .filter(c => isVendor ? c.status === 'COMPLETED' : c.status === 'ACTIVE')
+              .map(c => (
+                <option key={c.contractId} value={c.contractId}>
+                  {c.vendorName || 'Unknown'} — {c.projectName || 'Unknown'} (#{c.contractId})
+                </option>
+              ))}
           </FormSelect>
           <FormInput
-            label="Amount ($)"
+            label="Amount (₹)"
             required
             type="number"
             min="0.01"
