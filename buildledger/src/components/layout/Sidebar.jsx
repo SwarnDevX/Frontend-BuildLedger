@@ -7,19 +7,17 @@ import {
 import { useAuth } from '../../context/AuthContext';
 
 const ALL_NAV = [
-  { icon: LayoutDashboard, label: 'Dashboard',            path: '/',                 roles: ['ADMIN','PROJECT_MANAGER','FINANCE_OFFICER','COMPLIANCE_OFFICER'] },
-  { icon: Package,          label: 'My Portal',            path: '/vendor/dashboard', roles: ['VENDOR'] },
-  { icon: FileText,         label: 'Contracts',            path: '/contracts',        roles: ['VENDOR'] },
-  { icon: Truck,            label: 'Deliveries & Services',path: '/deliveries',       roles: ['VENDOR'] },
-  { icon: CreditCard,       label: 'Invoices',             path: '/invoices',         roles: ['VENDOR'] },
-  { icon: Users,            label: 'Vendors',              path: '/vendors',          roles: ['ADMIN','PROJECT_MANAGER','COMPLIANCE_OFFICER'] },
-  { icon: Briefcase,        label: 'Projects',             path: '/projects',         roles: ['ADMIN','PROJECT_MANAGER'] },
-  { icon: FileText,         label: 'Contracts',            path: '/contracts',        roles: ['ADMIN','PROJECT_MANAGER'] },
-  { icon: Truck,            label: 'Deliveries',           path: '/deliveries',       roles: ['ADMIN','PROJECT_MANAGER'] },
-  { icon: CreditCard,       label: 'Invoices',             path: '/invoices',         roles: ['ADMIN','FINANCE_OFFICER'] },
-  { icon: ShieldCheck,      label: 'Compliance',           path: '/compliance',       roles: ['ADMIN','COMPLIANCE_OFFICER','PROJECT_MANAGER'] },
-  { icon: Settings,         label: 'Admin',                path: '/admin',            roles: ['ADMIN'] },
-  { icon: Bell,             label: 'Notifications',        path: '/notifications',    roles: ['ADMIN','PROJECT_MANAGER','FINANCE_OFFICER','COMPLIANCE_OFFICER','VENDOR'] },
+  { icon: LayoutDashboard, label: 'Dashboard',     path: '/',                 roles: ['ADMIN','PROJECT_MANAGER','FINANCE_OFFICER','COMPLIANCE_OFFICER'] },
+  { icon: Package,          label: 'My Portal',      path: '/vendor/dashboard', roles: ['VENDOR'] },
+  { icon: FileText,         label: 'My Contracts',   path: '/vendor/contracts', roles: ['VENDOR'] },
+  { icon: Users,            label: 'Vendors',      path: '/vendors',          roles: ['ADMIN','PROJECT_MANAGER','COMPLIANCE_OFFICER'] },
+  { icon: Briefcase,        label: 'Projects',     path: '/projects',         roles: ['ADMIN','PROJECT_MANAGER'] },
+  { icon: FileText,         label: 'Contracts',    path: '/contracts',        roles: ['ADMIN','PROJECT_MANAGER'] },
+  { icon: Truck,            label: 'Deliveries',   path: '/deliveries',       roles: ['ADMIN','PROJECT_MANAGER','VENDOR'] },
+  { icon: CreditCard,       label: 'Invoices',     path: '/invoices',         roles: ['ADMIN','FINANCE_OFFICER'] },
+  { icon: ShieldCheck,      label: 'Compliance',   path: '/compliance',       roles: ['ADMIN','COMPLIANCE_OFFICER','PROJECT_MANAGER'] },
+  { icon: Settings,         label: 'Admin',        path: '/admin',            roles: ['ADMIN'] },
+  { icon: Bell,             label: 'Notifications',path: '/notifications',    roles: ['ADMIN','PROJECT_MANAGER','FINANCE_OFFICER','COMPLIANCE_OFFICER','VENDOR'] },
 ];
 
 const ROLE_LABELS = {
@@ -73,7 +71,7 @@ export default function Sidebar({ collapsed, setCollapsed }) {
       <nav className="flex-1 py-4 overflow-y-auto scrollbar-thin">
         {navItems.map(({ icon: Icon, label, path }) => (
           <NavLink
-            key={`${path}-${label}`}
+            key={path}
             to={path}
             end={path === '/' || path === '/vendor/dashboard'}
             className={({ isActive }) =>

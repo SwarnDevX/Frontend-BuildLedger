@@ -1,5 +1,5 @@
 import { useState, useEffect } from 'react';
-import { CheckCircle2, Clock, Truck, Package, RotateCcw, Calendar, Loader2, Plus, Wrench } from 'lucide-react';
+import { CheckCircle2, Clock, Truck, Package, RotateCcw, Calendar, Loader2, Plus, Wrench, AlertTriangle } from 'lucide-react';
 import Badge from '../../components/ui/Badge';
 import ProgressBar from '../../components/ui/ProgressBar';
 import Modal from '../../components/ui/Modal';
@@ -7,21 +7,105 @@ import {
   Button, FormInput, FormSelect, FormTextarea, FilterPills, PageHeader,
   Table, TableHead, TableHeader, TableBody, TableRow, TableCell,
 } from '../../components/ui';
-import { getAllDeliveries, createDelivery, updateDeliveryStatus } from '../../api/deliveries';
+import { getAllDeliveries, createDelivery, updateDeliveryStatus, getContractBudgetSummary } from '../../api/deliveries';
 import { getAllServices, createService, updateServiceStatus } from '../../api/services';
-import { getAllContracts, getContractsByVendor } from '../../api/contracts';
-import { getAllVendors } from '../../api/vendors';
-import { getDeliveryPageSummary } from '../../api/reports';
-import { checkCompliance, getAllCompliance } from '../../api/compliance';
+import { getAllContracts, getVendorContracts } from '../../api/contracts';
 import { useAuth } from '../../context/AuthContext';
 import toast from 'react-hot-toast';
 
+// ─── Currency helper ──────────────────────────────────────────────────────────
+
+function formatINR(amount) {
+  if (!amount) return '—';
+  return new Intl.NumberFormat('en-IN', {
+    style: 'currency', currency: 'INR', maximumFractionDigits: 0,
+  }).format(Number(amount));
+}
+
+// ─── Contract Budget Breakdown ────────────────────────────────────────────────
+// Same pattern as BudgetBreakdown in ContractManagement but at contract level.
+// Calls GET /deliveries/contract/{id}/budget-summary
+// remaining = contractValue - sum(delivery prices) - sum(service prices)
+
+function ContractBudgetBreakdown({ contractId, currentPrice = 0, onBudgetStatus }) {
+  const [summary, setSummary] = useState(null);
+  const [loading, setLoading] = useState(false);
+
+  useEffect(() => {
+    if (!contractId) { setSummary(null); onBudgetStatus?.(false); return; }
+    setLoading(true);
+    getContractBudgetSummary(contractId)
+      .then(res => setSummary(res.data?.data ?? null))
+      .catch(() => setSummary(null))
+      .finally(() => setLoading(false));
+  }, [contractId]);
+
+  useEffect(() => {
+    if (!summary) { onBudgetStatus?.(false); return; }
+    const val      = Number(currentPrice || 0);
+    const avail    = Number(summary.remaining ?? 0);
+    const exceeded = val > 0 && val > avail;
+    onBudgetStatus?.(exceeded);
+  }, [summary, currentPrice]);
+
+  if (!contractId) return null;
+
+  const available = summary?.remaining ?? null;
+  const val       = Number(currentPrice || 0);
+  const afterThis = available !== null ? available - val : null;
+  const isOver    = afterThis !== null && val > 0 && afterThis < 0;
+
+  return (
+    <div className="mt-1 space-y-1">
+      {loading ? (
+        <p className="text-xs text-slate-400">Calculating contract budget…</p>
+      ) : available !== null && (
+        <>
+          <div className="grid grid-cols-3 gap-2 p-2 rounded-lg"
+            style={{ background: 'rgba(37,99,235,0.05)', border: '1px solid rgba(37,99,235,0.1)' }}>
+            <div>
+              <p className="text-[10px] text-slate-400 font-semibold uppercase">Contract Value</p>
+              <p className="text-xs font-bold text-slate-700 dark:text-slate-200">{formatINR(summary?.contractValue)}</p>
+            </div>
+            <div>
+              <p className="text-[10px] text-slate-400 font-semibold uppercase">Allocated</p>
+              <p className="text-xs font-bold text-amber-600">{formatINR(summary?.spent)}</p>
+            </div>
+            <div>
+              <p className="text-[10px] text-slate-400 font-semibold uppercase">Remaining</p>
+              <p className={`text-xs font-bold ${summary?.overBudget ? 'text-red-500' : 'text-green-600'}`}>
+                {formatINR(available)}
+              </p>
+            </div>
+          </div>
+          {val > 0 && (
+            <div className={`flex items-center gap-1.5 px-2 py-1.5 rounded-lg text-xs font-semibold ${
+              isOver
+                ? 'bg-red-50 dark:bg-red-900/20 text-red-600 border border-red-200 dark:border-red-800'
+                : 'bg-green-50 dark:bg-green-900/20 text-green-700 border border-green-200 dark:border-green-800'
+            }`}>
+              {isOver
+                ? <AlertTriangle size={12} className="shrink-0" />
+                : <CheckCircle2 size={12} className="shrink-0" />}
+              {isOver
+                ? `Exceeds budget by ${formatINR(Math.abs(afterThis))} — reduce price or contact admin`
+                : `After this: ${formatINR(afterThis)} remaining`}
+            </div>
+          )}
+        </>
+      )}
+    </div>
+  );
+}
+
+// ─── Status maps ──────────────────────────────────────────────────────────────
+
 const DELIVERY_STATUS_MAP = {
-  PENDING:          { icon: Clock,        color: '#F59E0B', label: 'Pending' },
+  PENDING:          { icon: Clock,        color: '#F59E0B', label: 'Pending'          },
   MARKED_DELIVERED: { icon: Truck,        color: '#2563EB', label: 'Marked Delivered' },
-  DELAYED:          { icon: Calendar,     color: '#F97316', label: 'Delayed' },
-  ACCEPTED:         { icon: CheckCircle2, color: '#22C55E', label: 'Accepted' },
-  REJECTED:         { icon: Package,      color: '#EF4444', label: 'Rejected' },
+  DELAYED:          { icon: Calendar,     color: '#F97316', label: 'Delayed'          },
+  ACCEPTED:         { icon: CheckCircle2, color: '#22C55E', label: 'Accepted'         },
+  REJECTED:         { icon: Package,      color: '#EF4444', label: 'Rejected'         },
 };
 
 const DELIVERY_TRANSITIONS = {
@@ -46,30 +130,27 @@ function deliveryProgress(status) {
 const DELIVERY_STEPS = ['PENDING', 'MARKED_DELIVERED', 'ACCEPTED'];
 
 const SERVICE_STATUS_MAP = {
-  PENDING:     { color: '#F59E0B', label: 'Pending' },
+  PENDING:     { color: '#F59E0B', label: 'Pending'     },
   IN_PROGRESS: { color: '#2563EB', label: 'In Progress' },
-  COMPLETED:   { color: '#14B8A6', label: 'Completed' },
-  VERIFIED:    { color: '#22C55E', label: 'Verified' },
-  UNVERIFIED:  { color: '#EF4444', label: 'Unverified' },
+  COMPLETED:   { color: '#14B8A6', label: 'Completed'   },
+  VERIFIED:    { color: '#22C55E', label: 'Verified'    },
 };
 
 const SERVICE_TRANSITIONS = {
   PENDING:     ['IN_PROGRESS'],
   IN_PROGRESS: ['COMPLETED'],
-  COMPLETED:   ['VERIFIED', 'UNVERIFIED'],
+  COMPLETED:   ['VERIFIED'],
   VERIFIED:    [],
-  UNVERIFIED:  [],
 };
 
 const SERVICE_ROLE_RULES = {
   IN_PROGRESS: ['VENDOR', 'ADMIN'],
   COMPLETED:   ['VENDOR', 'ADMIN'],
   VERIFIED:    ['PROJECT_MANAGER', 'ADMIN'],
-  UNVERIFIED:  ['PROJECT_MANAGER', 'ADMIN'],
 };
 
 function serviceProgress(status) {
-  return { PENDING: 10, IN_PROGRESS: 40, COMPLETED: 75, VERIFIED: 100, UNVERIFIED: 100 }[status] ?? 10;
+  return { PENDING: 10, IN_PROGRESS: 40, COMPLETED: 75, VERIFIED: 100 }[status] ?? 10;
 }
 
 function contractLabel(contracts, contractId) {
@@ -103,7 +184,9 @@ function Stepper({ status, steps }) {
             ${i <= idx ? 'bg-blue-600 text-white' : 'bg-slate-100 text-slate-400'}`}>
             {i < idx ? '✓' : i + 1}
           </div>
-          {i < steps.length - 1 && <div className={`w-5 h-0.5 ${i < idx ? 'bg-blue-500' : 'bg-slate-200 dark:bg-slate-700'}`} />}
+          {i < steps.length - 1 && (
+            <div className={`w-5 h-0.5 ${i < idx ? 'bg-blue-500' : 'bg-slate-200 dark:bg-slate-700'}`} />
+          )}
         </div>
       ))}
     </div>
@@ -131,26 +214,25 @@ function ActionButtons({ transitions, roleRules, currentStatus, role, onTransiti
   );
 }
 
-const EMPTY_DELIVERY = { contractId: '', item: '', quantity: '', unit: '', date: '', remarks: '' };
-const EMPTY_SERVICE  = { contractId: '', description: '', completionDate: '', remarks: '' };
+const EMPTY_DELIVERY = { contractId: '', item: '', quantity: '', unit: '', price: '', date: '', remarks: '' };
+const EMPTY_SERVICE  = { contractId: '', description: '', price: '', completionDate: '', remarks: '' };
 
 const DELIVERY_FILTER_OPTIONS = ['All', ...Object.keys(DELIVERY_STATUS_MAP)].map(s => ({
-  key: s,
-  label: DELIVERY_STATUS_MAP[s]?.label || s,
+  key: s, label: DELIVERY_STATUS_MAP[s]?.label || s,
 }));
 
 const SERVICE_FILTER_OPTIONS = ['All', ...Object.keys(SERVICE_STATUS_MAP)].map(s => ({
-  key: s,
-  label: SERVICE_STATUS_MAP[s]?.label || s,
+  key: s, label: SERVICE_STATUS_MAP[s]?.label || s,
 }));
+
+// ─── Main page ────────────────────────────────────────────────────────────────
 
 export default function DeliveryTracking() {
   const { user } = useAuth();
   const [tab, setTab]               = useState('deliveries');
-  const [deliveries, setDeliveries]       = useState([]);
-  const [services, setServices]           = useState([]);
-  const [contracts, setContracts]         = useState([]);
-  const [deliverySummary, setDeliverySummary] = useState(null);
+  const [deliveries, setDeliveries] = useState([]);
+  const [services, setServices]     = useState([]);
+  const [contracts, setContracts]   = useState([]);
   const [loading, setLoading]       = useState(true);
   const [filter, setFilter]         = useState('All');
   const [svcFilter, setSvcFilter]   = useState('All');
@@ -160,10 +242,10 @@ export default function DeliveryTracking() {
   const [formS, setFormS]           = useState(EMPTY_SERVICE);
   const [saving, setSaving]         = useState(false);
   const [updating, setUpdating]     = useState({});
-  const [dErrors, setDErrors] = useState({});
-  const [sErrors, setSErrors] = useState({});
-  const [complianceBlock, setComplianceBlock] = useState(null);
-  const [complianceRecords, setComplianceRecords] = useState([]);
+  const [dErrors, setDErrors]       = useState({});
+  const [sErrors, setSErrors]       = useState({});
+  const [dBudgetExceeded, setDBudgetExceeded] = useState(false);
+  const [sBudgetExceeded, setSBudgetExceeded] = useState(false);
 
   const canCreate = ['ADMIN', 'VENDOR'].includes(user?.role);
   const today     = new Date().toISOString().split('T')[0];
@@ -171,68 +253,59 @@ export default function DeliveryTracking() {
   const fetchData = async () => {
     setLoading(true);
     try {
-      const [d, s, c, sum, comp] = await Promise.allSettled([
-        getAllDeliveries(), getAllServices(), getAllContracts(), getDeliveryPageSummary(), getAllCompliance(),
-      ]);
-      const allDeliveries = d.status === 'fulfilled' ? (d.value.data?.data || []) : [];
-      const allServices   = s.status === 'fulfilled' ? (s.value.data?.data || []) : [];
-      const allContracts  = c.status === 'fulfilled' ? (c.value.data?.data || []) : [];
-      setDeliverySummary(sum.status === 'fulfilled' ? sum.value.data : null);
-      setComplianceRecords(comp.status === 'fulfilled' ? (comp.value.data?.data || []) : []);
-
-      if (user?.role === 'VENDOR') {
-        // Scope everything to this vendor's contracts only
-        try {
-          const vendorRes    = await getAllVendors();
-          const allVendors   = vendorRes.data?.data || [];
-          const mine         = allVendors.find(v => v.userId === user.userId || v.username === user.username);
-          if (mine) {
-            const vcRes        = await getContractsByVendor(mine.vendorId);
-            const myContracts  = vcRes.data?.data || [];
-            const myContractIds = new Set(myContracts.map(co => co.contractId));
-            setContracts(myContracts);
-            setDeliveries(allDeliveries.filter(de => myContractIds.has(de.contractId)));
-            setServices(allServices.filter(sv => myContractIds.has(sv.contractId)));
-          } else {
-            setContracts([]); setDeliveries([]); setServices([]);
-          }
-        } catch {
-          setContracts([]); setDeliveries([]); setServices([]);
-        }
-      } else {
-        setDeliveries(allDeliveries);
-        setServices(allServices);
-        setContracts(allContracts);
-      }
+      // VENDOR → getVendorContracts() → GET /contracts/vendor/my (their contracts only)
+      // ADMIN / PM → getAllContracts()  → GET /contracts (all contracts)
+      // This fixes the empty dropdown issue for vendors in Create Delivery modal
+      const contractFn = user?.role === 'VENDOR' ? getVendorContracts : getAllContracts;
+      const [d, s, c] = await Promise.allSettled([getAllDeliveries(), getAllServices(), contractFn()]);
+      setDeliveries(d.status === 'fulfilled' ? (d.value.data?.data || []) : []);
+      setServices(s.status === 'fulfilled'   ? (s.value.data?.data || []) : []);
+      setContracts(c.status === 'fulfilled'  ? (c.value.data?.data || []) : []);
     } catch { toast.error('Failed to load data'); }
     finally { setLoading(false); }
   };
 
   useEffect(() => { fetchData(); }, []);
 
+  // ── Create Delivery ─────────────────────────────────────────────────────────
+
   const handleCreateDelivery = async () => {
     const e = {};
-    if (!formD.contractId)        e.contractId = 'Please select a contract';
-    if (!formD.item.trim())       e.item       = 'Item is required';
-    if (!formD.quantity)          e.quantity   = 'Quantity is required';
-    if (!formD.unit?.trim())      e.unit       = 'Unit is required';
-    if (!formD.date)              e.date       = 'Delivery date is required';
+    if (!formD.contractId)                    e.contractId = 'Please select a contract';
+    if (!formD.item.trim())                   e.item       = 'Item is required';
+    if (!formD.quantity)                      e.quantity   = 'Quantity is required';
+    if (!formD.price)                         e.price      = 'Price is required';
+    if (formD.price && Number(formD.price) <= 0) e.price   = 'Price must be greater than 0';
+    if (!formD.date)                          e.date       = 'Delivery date is required';
+
+    // Validate delivery date is within contract period
+    if (formD.date && formD.contractId) {
+      const selectedContract = contracts.find(c => String(c.contractId) === String(formD.contractId));
+      if (selectedContract) {
+        if (formD.date < selectedContract.startDate)
+          e.date = `Date cannot be before contract start (${selectedContract.startDate})`;
+        else if (formD.date > selectedContract.endDate)
+          e.date = `Date cannot be after contract end (${selectedContract.endDate})`;
+      }
+    }
+
+    if (dBudgetExceeded) e.price = 'Price exceeds remaining contract budget';
     setDErrors(e);
     if (Object.keys(e).length) return;
+
     setSaving(true);
     try {
       await createDelivery({
         contractId: Number(formD.contractId),
         item:       formD.item,
         quantity:   Number(formD.quantity),
-        unit:       formD.unit || undefined,
+        unit:       formD.unit    || undefined,
+        price:      Number(formD.price),
         date:       formD.date,
         remarks:    formD.remarks || undefined,
       });
       toast.success('Delivery created');
-      setShowCreateD(false);
-      setFormD(EMPTY_DELIVERY);
-      setDErrors({});
+      setShowCreateD(false); setFormD(EMPTY_DELIVERY); setDErrors({}); setDBudgetExceeded(false);
       fetchData();
     } catch (err) { showErrors(err); }
     finally { setSaving(false); }
@@ -240,18 +313,6 @@ export default function DeliveryTracking() {
 
   const handleDeliveryTransition = async (deliveryId, nextStatus) => {
     setUpdating(p => ({ ...p, [`d-${deliveryId}`]: true }));
-    if (nextStatus === 'ACCEPTED') {
-      try {
-        await checkCompliance(deliveryId, 'DELIVERY_CHECK');
-      } catch {
-        setComplianceBlock({
-          message: `Delivery #${deliveryId} cannot be accepted yet.`,
-          hint: `A DELIVERY_CHECK compliance record must exist for Reference ID ${deliveryId} with status PASSED or WAIVED.\n\nGo to Compliance & Audit → Create Record → Type: DELIVERY_CHECK → Reference ID: ${deliveryId}, then move it to PASSED.`,
-        });
-        setUpdating(p => ({ ...p, [`d-${deliveryId}`]: false }));
-        return;
-      }
-    }
     try {
       await updateDeliveryStatus(deliveryId, nextStatus);
       toast.success(`Delivery → ${DELIVERY_STATUS_MAP[nextStatus]?.label || nextStatus}`);
@@ -260,25 +321,42 @@ export default function DeliveryTracking() {
     finally { setUpdating(p => ({ ...p, [`d-${deliveryId}`]: false })); }
   };
 
+  // ── Create Service ──────────────────────────────────────────────────────────
+
   const handleCreateService = async () => {
     const e = {};
-    if (!formS.contractId)                          e.contractId    = 'Please select a contract';
+    if (!formS.contractId)                                    e.contractId     = 'Please select a contract';
     if (!formS.description || formS.description.trim().length < 10) e.description = 'Description must be at least 10 characters';
-    if (!formS.completionDate)                      e.completionDate = 'Completion date is required';
+    if (!formS.price)                                         e.price          = 'Price is required';
+    if (formS.price && Number(formS.price) <= 0)              e.price          = 'Price must be greater than 0';
+    if (!formS.completionDate)                                e.completionDate = 'Completion date is required';
+
+    // Validate completion date is within contract period
+    if (formS.completionDate && formS.contractId) {
+      const selectedContract = contracts.find(c => String(c.contractId) === String(formS.contractId));
+      if (selectedContract) {
+        if (formS.completionDate < selectedContract.startDate)
+          e.completionDate = `Date cannot be before contract start (${selectedContract.startDate})`;
+        else if (formS.completionDate > selectedContract.endDate)
+          e.completionDate = `Date cannot be after contract end (${selectedContract.endDate})`;
+      }
+    }
+
+    if (sBudgetExceeded) e.price = 'Price exceeds remaining contract budget';
     setSErrors(e);
     if (Object.keys(e).length) return;
+
     setSaving(true);
     try {
       await createService({
         contractId:     Number(formS.contractId),
         description:    formS.description,
+        price:          Number(formS.price),
         completionDate: formS.completionDate,
         remarks:        formS.remarks || undefined,
       });
       toast.success('Service created');
-      setShowCreateS(false);
-      setFormS(EMPTY_SERVICE);
-      setSErrors({});
+      setShowCreateS(false); setFormS(EMPTY_SERVICE); setSErrors({}); setSBudgetExceeded(false);
       fetchData();
     } catch (err) { showErrors(err); }
     finally { setSaving(false); }
@@ -286,18 +364,6 @@ export default function DeliveryTracking() {
 
   const handleServiceTransition = async (serviceId, nextStatus) => {
     setUpdating(p => ({ ...p, [`s-${serviceId}`]: true }));
-    if (nextStatus === 'VERIFIED') {
-      try {
-        await checkCompliance(serviceId, 'SERVICE_CHECK');
-      } catch {
-        setComplianceBlock({
-          message: `Service #${serviceId} cannot be verified yet.`,
-          hint: `A SERVICE_CHECK compliance record must exist for Reference ID ${serviceId} with status PASSED or WAIVED.\n\nGo to Compliance & Audit → Create Record → Type: SERVICE_CHECK → Reference ID: ${serviceId}, then move it to PASSED.`,
-        });
-        setUpdating(p => ({ ...p, [`s-${serviceId}`]: false }));
-        return;
-      }
-    }
     try {
       await updateServiceStatus(serviceId, nextStatus);
       toast.success(`Service → ${SERVICE_STATUS_MAP[nextStatus]?.label || nextStatus}`);
@@ -309,35 +375,14 @@ export default function DeliveryTracking() {
   const setD = k => e => setFormD(p => ({ ...p, [k]: e.target.value }));
   const setS = k => e => setFormS(p => ({ ...p, [k]: e.target.value }));
 
-  const selectedDeliveryContract = contracts.find(c => String(c.contractId) === String(formD.contractId));
-  const selectedServiceContract  = contracts.find(c => String(c.contractId) === String(formS.contractId));
-
   if (loading) return (
     <div className="flex items-center justify-center h-64 gap-2 text-slate-400">
       <Loader2 size={20} className="animate-spin text-blue-500" /><span className="text-sm">Loading…</span>
     </div>
   );
 
-  const failedDeliveryIds = new Set(
-    complianceRecords
-      .filter(r => r.type === 'DELIVERY_CHECK' && r.status === 'FAILED')
-      .map(r => Number(r.referenceId))
-  );
-  const failedServiceIds = new Set(
-    complianceRecords
-      .filter(r => r.type === 'SERVICE_CHECK' && r.status === 'FAILED')
-      .map(r => Number(r.referenceId))
-  );
-
-  const deliveryEffStatus = d => failedDeliveryIds.has(d.deliveryId) ? 'REJECTED'   : d.status;
-  const serviceEffStatus  = s => failedServiceIds.has(s.serviceId)   ? 'UNVERIFIED' : s.status;
-
-  const filteredDeliveries = filter === 'All'
-    ? deliveries
-    : deliveries.filter(d => deliveryEffStatus(d) === filter);
-  const filteredServices = svcFilter === 'All'
-    ? services
-    : services.filter(s => serviceEffStatus(s) === svcFilter);
+  const filteredDeliveries = filter === 'All'    ? deliveries : deliveries.filter(d => d.status === filter);
+  const filteredServices   = svcFilter === 'All' ? services   : services.filter(s => s.status === svcFilter);
 
   return (
     <div className="animate-fadeIn space-y-5">
@@ -360,7 +405,7 @@ export default function DeliveryTracking() {
       {/* Tabs */}
       <div className="flex gap-1 border-b border-slate-200 dark:border-slate-700/50">
         {[
-          { key: 'deliveries', label: 'Deliveries', icon: Truck },
+          { key: 'deliveries', label: 'Deliveries', icon: Truck  },
           { key: 'services',   label: 'Services',   icon: Wrench },
         ].map(t => {
           const Icon = t.icon;
@@ -374,13 +419,13 @@ export default function DeliveryTracking() {
         })}
       </div>
 
-      {/* DELIVERIES TAB */}
+      {/* ── DELIVERIES TAB ── */}
       {tab === 'deliveries' && (
         <>
           <div className="grid grid-cols-2 sm:grid-cols-5 gap-3">
             {Object.entries(DELIVERY_STATUS_MAP).map(([s, cfg]) => {
               const Icon = cfg.icon;
-              const count = deliverySummary?.deliveryStatusCounts?.[s] ?? 0;
+              const count = deliveries.filter(d => d.status === s).length;
               return (
                 <div key={s} className="glass-card p-4 flex items-center gap-3">
                   <div className="w-9 h-9 rounded-xl flex items-center justify-center" style={{ background: `${cfg.color}18` }}>
@@ -401,19 +446,18 @@ export default function DeliveryTracking() {
             <div className="overflow-x-auto">
               <Table elevated={false}>
                 <TableHead>
-                  {['ID', 'Item', 'Contract', 'Qty / Unit', 'Delivery Date', 'Status', 'Progress', 'Steps', 'Actions'].map(h => (
+                  {['ID', 'Item', 'Contract', 'Qty / Unit', 'Price (₹)', 'Delivery Date', 'Status', 'Progress', 'Steps', 'Actions'].map(h => (
                     <TableHeader key={h}>{h}</TableHeader>
                   ))}
                 </TableHead>
                 <TableBody>
                   {filteredDeliveries.length === 0 ? (
                     <TableRow>
-                      <TableCell colSpan={9} className="py-10 text-center text-sm text-slate-400">No deliveries found</TableCell>
+                      <TableCell colSpan={10} className="py-10 text-center text-sm text-slate-400">No deliveries found</TableCell>
                     </TableRow>
                   ) : filteredDeliveries.map(d => {
-                    const effStatus = deliveryEffStatus(d);
-                    const cfg       = DELIVERY_STATUS_MAP[effStatus] || DELIVERY_STATUS_MAP.PENDING;
-                    const progress  = deliveryProgress(effStatus);
+                    const cfg      = DELIVERY_STATUS_MAP[d.status] || DELIVERY_STATUS_MAP.PENDING;
+                    const progress = deliveryProgress(d.status);
                     return (
                       <TableRow key={d.deliveryId}>
                         <TableCell className="text-xs font-mono text-blue-600 dark:text-blue-400 font-semibold">#{d.deliveryId}</TableCell>
@@ -421,29 +465,29 @@ export default function DeliveryTracking() {
                           <p className="text-xs font-semibold text-slate-800 dark:text-slate-100">{d.item || '—'}</p>
                           {d.remarks && <p className="text-[10px] text-slate-400 truncate max-w-[120px]">{d.remarks}</p>}
                         </TableCell>
-                        <TableCell className="text-xs text-slate-500 dark:text-slate-400 max-w-[140px]">
+                        <TableCell className="text-xs text-slate-500 max-w-[140px]">
                           <span className="truncate block">{contractLabel(contracts, d.contractId)}</span>
                         </TableCell>
-                        <TableCell className="text-xs text-slate-600 dark:text-slate-300 font-medium whitespace-nowrap">
+                        <TableCell className="text-xs font-medium whitespace-nowrap">
                           {d.quantity ? `${d.quantity}${d.unit ? ` ${d.unit}` : ''}` : '—'}
                         </TableCell>
-                        <TableCell className="text-xs text-slate-500 dark:text-slate-400 whitespace-nowrap">{d.date || '—'}</TableCell>
-                        <TableCell><Badge status={effStatus} /></TableCell>
+                        <TableCell className="text-xs font-semibold text-green-700 dark:text-green-400 whitespace-nowrap">
+                          {formatINR(d.price)}
+                        </TableCell>
+                        <TableCell className="text-xs text-slate-500 whitespace-nowrap">{d.date || '—'}</TableCell>
+                        <TableCell><Badge status={d.status} /></TableCell>
                         <TableCell className="w-28">
                           <ProgressBar value={progress} color={cfg.color} showLabel />
                         </TableCell>
                         <TableCell>
-                          <Stepper status={effStatus} steps={DELIVERY_STEPS} />
+                          <Stepper status={d.status} steps={DELIVERY_STEPS} />
                         </TableCell>
                         <TableCell>
                           <ActionButtons
-                            transitions={DELIVERY_TRANSITIONS}
-                            roleRules={DELIVERY_ROLE_RULES}
-                            currentStatus={effStatus}
-                            role={user?.role}
+                            transitions={DELIVERY_TRANSITIONS} roleRules={DELIVERY_ROLE_RULES}
+                            currentStatus={d.status} role={user?.role}
                             onTransition={(_, next) => handleDeliveryTransition(d.deliveryId, next)}
-                            loadingKey={updating[`d-${d.deliveryId}`]}
-                            itemKey={d.deliveryId}
+                            loadingKey={updating[`d-${d.deliveryId}`]} itemKey={d.deliveryId}
                           />
                         </TableCell>
                       </TableRow>
@@ -456,12 +500,12 @@ export default function DeliveryTracking() {
         </>
       )}
 
-      {/* SERVICES TAB */}
+      {/* ── SERVICES TAB ── */}
       {tab === 'services' && (
         <>
           <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
             {Object.entries(SERVICE_STATUS_MAP).map(([s, cfg]) => {
-              const count = deliverySummary?.serviceStatusCounts?.[s] ?? 0;
+              const count = services.filter(x => x.status === s).length;
               return (
                 <div key={s} className="glass-card p-4 flex items-center gap-3">
                   <div className="w-9 h-9 rounded-xl flex items-center justify-center" style={{ background: `${cfg.color}18` }}>
@@ -482,19 +526,18 @@ export default function DeliveryTracking() {
             <div className="overflow-x-auto">
               <Table elevated={false}>
                 <TableHead>
-                  {['ID', 'Description', 'Contract', 'Completion Date', 'Status', 'Progress', 'Actions'].map(h => (
+                  {['ID', 'Description', 'Contract', 'Price (₹)', 'Completion Date', 'Status', 'Progress', 'Actions'].map(h => (
                     <TableHeader key={h}>{h}</TableHeader>
                   ))}
                 </TableHead>
                 <TableBody>
                   {filteredServices.length === 0 ? (
                     <TableRow>
-                      <TableCell colSpan={7} className="py-10 text-center text-sm text-slate-400">No services found</TableCell>
+                      <TableCell colSpan={8} className="py-10 text-center text-sm text-slate-400">No services found</TableCell>
                     </TableRow>
                   ) : filteredServices.map(s => {
-                    const effStatus = serviceEffStatus(s);
-                    const cfg       = SERVICE_STATUS_MAP[effStatus] || SERVICE_STATUS_MAP.PENDING;
-                    const progress  = serviceProgress(effStatus);
+                    const progress = serviceProgress(s.status);
+                    const cfg      = SERVICE_STATUS_MAP[s.status] || SERVICE_STATUS_MAP.PENDING;
                     return (
                       <TableRow key={s.serviceId}>
                         <TableCell className="text-xs font-mono text-blue-600 dark:text-blue-400 font-semibold">#{s.serviceId}</TableCell>
@@ -502,23 +545,23 @@ export default function DeliveryTracking() {
                           <p className="text-xs text-slate-700 dark:text-slate-200 max-w-[200px] truncate">{s.description || '—'}</p>
                           {s.remarks && <p className="text-[10px] text-slate-400 truncate max-w-[200px]">{s.remarks}</p>}
                         </TableCell>
-                        <TableCell className="text-xs text-slate-500 dark:text-slate-400 max-w-[140px]">
+                        <TableCell className="text-xs text-slate-500 max-w-[140px]">
                           <span className="truncate block">{contractLabel(contracts, s.contractId)}</span>
                         </TableCell>
-                        <TableCell className="text-xs text-slate-500 dark:text-slate-400 whitespace-nowrap">{s.completionDate || '—'}</TableCell>
-                        <TableCell><Badge status={effStatus} /></TableCell>
+                        <TableCell className="text-xs font-semibold text-green-700 dark:text-green-400 whitespace-nowrap">
+                          {formatINR(s.price)}
+                        </TableCell>
+                        <TableCell className="text-xs text-slate-500 whitespace-nowrap">{s.completionDate || '—'}</TableCell>
+                        <TableCell><Badge status={s.status} /></TableCell>
                         <TableCell className="w-28">
                           <ProgressBar value={progress} color={cfg.color} showLabel />
                         </TableCell>
                         <TableCell>
                           <ActionButtons
-                            transitions={SERVICE_TRANSITIONS}
-                            roleRules={SERVICE_ROLE_RULES}
-                            currentStatus={effStatus}
-                            role={user?.role}
+                            transitions={SERVICE_TRANSITIONS} roleRules={SERVICE_ROLE_RULES}
+                            currentStatus={s.status} role={user?.role}
                             onTransition={(_, next) => handleServiceTransition(s.serviceId, next)}
-                            loadingKey={updating[`s-${s.serviceId}`]}
-                            itemKey={s.serviceId}
+                            loadingKey={updating[`s-${s.serviceId}`]} itemKey={s.serviceId}
                           />
                         </TableCell>
                       </TableRow>
@@ -531,20 +574,15 @@ export default function DeliveryTracking() {
         </>
       )}
 
-      {/* Create Delivery Modal */}
-      <Modal open={showCreateD} onClose={() => { setShowCreateD(false); setFormD(EMPTY_DELIVERY); setDErrors({}); }} title="Create Delivery">
+      {/* ── Create Delivery Modal ── */}
+      <Modal open={showCreateD}
+        onClose={() => { setShowCreateD(false); setFormD(EMPTY_DELIVERY); setDErrors({}); setDBudgetExceeded(false); }}
+        title="Create Delivery">
         <div className="space-y-4">
-          <FormSelect
-            label="Contract"
-            required
-            value={formD.contractId}
-            onChange={e => {
-              setFormD(p => ({ ...p, contractId: e.target.value, date: '' }));
-              if (e.target.value) setDErrors(p => ({ ...p, contractId: '' }));
-            }}
+          <FormSelect label="Contract" required value={formD.contractId}
+            onChange={e => { setD('contractId')(e); setDBudgetExceeded(false); setFormD(p => ({ ...p, contractId: e.target.value, date: '' })); if (e.target.value) setDErrors(p => ({ ...p, contractId: '', date: '' })); }}
             error={dErrors.contractId}
-            hint={contracts.filter(c => c.status === 'ACTIVE').length === 0 ? 'No active contracts. A vendor must accept a contract first.' : ''}
-          >
+            hint={contracts.filter(c => c.status === 'ACTIVE').length === 0 ? 'No active contracts.' : ''}>
             <option value="">Select contract…</option>
             {contracts.filter(c => c.status === 'ACTIVE').map(c => (
               <option key={c.contractId} value={c.contractId}>
@@ -552,73 +590,73 @@ export default function DeliveryTracking() {
               </option>
             ))}
           </FormSelect>
-          <FormInput
-            label="Item"
-            required
-            value={formD.item}
+
+          <FormInput label="Item" required value={formD.item}
             onChange={e => { setD('item')(e); if (e.target.value.trim()) setDErrors(p => ({ ...p, item: '' })); }}
-            placeholder="Item description (min 2 chars)"
-            error={dErrors.item}
-          />
+            placeholder="Item description (min 2 chars)" error={dErrors.item} />
+
           <div className="grid grid-cols-2 gap-3">
-            <FormInput
-              label="Quantity"
-              required
-              type="number"
-              min="0.01"
-              step="0.01"
+            <FormInput label="Quantity" required type="number" min="0.01" step="0.01"
               value={formD.quantity}
               onChange={e => { setD('quantity')(e); if (e.target.value) setDErrors(p => ({ ...p, quantity: '' })); }}
+              placeholder="0.00" error={dErrors.quantity} />
+            <FormInput label="Unit" value={formD.unit} onChange={setD('unit')} placeholder="tons, kg, pcs…" />
+          </div>
+
+          {/* Price — with live contract budget breakdown */}
+          <div>
+            <FormInput label="Price (₹)" required type="number" min="0.01" step="0.01"
+              value={formD.price}
+              onChange={e => { setD('price')(e); if (e.target.value) setDErrors(p => ({ ...p, price: '' })); }}
               placeholder="0.00"
-              error={dErrors.quantity}
-            />
-            <FormInput
-              label="Unit"
-              required
-              value={formD.unit}
-              onChange={e => { setD('unit')(e); if (e.target.value.trim()) setDErrors(p => ({ ...p, unit: '' })); }}
-              placeholder="tons, kg, pcs…"
-              error={dErrors.unit}
+              hint="This price will be used for delivery invoice generation"
+              error={dErrors.price} />
+            <ContractBudgetBreakdown
+              contractId={formD.contractId ? Number(formD.contractId) : null}
+              currentPrice={formD.price}
+              onBudgetStatus={setDBudgetExceeded}
             />
           </div>
-          <FormInput
-            label="Delivery Date"
-            required
-            hint={
-              selectedDeliveryContract
-                ? `Today → ${selectedDeliveryContract.endDate} (contract end)`
-                : 'Select a contract first'
-            }
-            type="date"
-            min={today}
-            max={selectedDeliveryContract?.endDate || undefined}
-            disabled={!selectedDeliveryContract}
-            value={formD.date}
-            onChange={e => { setD('date')(e); if (e.target.value) setDErrors(p => ({ ...p, date: '' })); }}
-            error={dErrors.date}
-          />
+
+          {/* Delivery Date — must be within contract period */}
+          {(() => {
+            const selectedContract = contracts.find(c => String(c.contractId) === String(formD.contractId));
+            return (
+              <FormInput label="Delivery Date" required
+                type="date"
+                min={selectedContract?.startDate || undefined}
+                max={selectedContract?.endDate   || today}
+                hint={selectedContract
+                  ? `Must be within contract period: ${selectedContract.startDate} → ${selectedContract.endDate}`
+                  : 'Select a contract first'}
+                value={formD.date}
+                onChange={e => { setD('date')(e); if (e.target.value) setDErrors(p => ({ ...p, date: '' })); }}
+                error={dErrors.date}
+              />
+            );
+          })()}
+
           <FormTextarea label="Remarks" value={formD.remarks} onChange={setD('remarks')} rows={2} placeholder="Optional remarks…" />
+
           <div className="flex gap-2 justify-end pt-2">
-            <Button variant="secondary" size="xs" onClick={() => { setShowCreateD(false); setFormD(EMPTY_DELIVERY); setDErrors({}); }}>Cancel</Button>
-            <Button variant="primary" size="xs" onClick={handleCreateDelivery} loading={saving}>Create Delivery</Button>
+            <Button variant="secondary" size="xs"
+              onClick={() => { setShowCreateD(false); setFormD(EMPTY_DELIVERY); setDErrors({}); setDBudgetExceeded(false); }}>Cancel</Button>
+            <Button variant="primary" size="xs" onClick={handleCreateDelivery} loading={saving}
+              disabled={saving || dBudgetExceeded}>
+              Create Delivery
+            </Button>
           </div>
         </div>
       </Modal>
 
-      {/* Create Service Modal */}
-      <Modal open={showCreateS} onClose={() => { setShowCreateS(false); setFormS(EMPTY_SERVICE); setSErrors({}); }} title="Create Service">
+      {/* ── Create Service Modal ── */}
+      <Modal open={showCreateS}
+        onClose={() => { setShowCreateS(false); setFormS(EMPTY_SERVICE); setSErrors({}); setSBudgetExceeded(false); }}
+        title="Create Service">
         <div className="space-y-4">
-          <FormSelect
-            label="Contract"
-            required
-            value={formS.contractId}
-            onChange={e => {
-              setFormS(p => ({ ...p, contractId: e.target.value, completionDate: '' }));
-              if (e.target.value) setSErrors(p => ({ ...p, contractId: '' }));
-            }}
-            error={sErrors.contractId}
-            hint={contracts.filter(c => c.status === 'ACTIVE').length === 0 ? 'No active contracts. A vendor must accept a contract first.' : ''}
-          >
+          <FormSelect label="Contract" required value={formS.contractId}
+            onChange={e => { setS('contractId')(e); setSBudgetExceeded(false); setFormS(p => ({ ...p, contractId: e.target.value, completionDate: '' })); if (e.target.value) setSErrors(p => ({ ...p, contractId: '', completionDate: '' })); }}
+            error={sErrors.contractId}>
             <option value="">Select contract…</option>
             {contracts.filter(c => c.status === 'ACTIVE').map(c => (
               <option key={c.contractId} value={c.contractId}>
@@ -626,50 +664,54 @@ export default function DeliveryTracking() {
               </option>
             ))}
           </FormSelect>
-          <FormTextarea
-            label="Description"
-            required
-            hint="(min 10 chars)"
+
+          <FormTextarea label="Description" required hint="(min 10 chars)"
             value={formS.description}
             onChange={e => { setS('description')(e); if (e.target.value.trim().length >= 10) setSErrors(p => ({ ...p, description: '' })); }}
-            rows={3}
-            placeholder="Describe the service to be provided…"
-            error={sErrors.description}
-          />
-          <FormInput
-            label="Expected Completion Date"
-            required
-            hint={
-              selectedServiceContract
-                ? `Today → ${selectedServiceContract.endDate} (contract end)`
-                : 'Select a contract first'
-            }
-            type="date"
-            min={today}
-            max={selectedServiceContract?.endDate || undefined}
-            disabled={!selectedServiceContract}
-            value={formS.completionDate}
-            onChange={e => { setS('completionDate')(e); if (e.target.value) setSErrors(p => ({ ...p, completionDate: '' })); }}
-            error={sErrors.completionDate}
-          />
-          <FormTextarea label="Remarks" value={formS.remarks} onChange={setS('remarks')} rows={2} placeholder="Optional remarks…" />
-          <div className="flex gap-2 justify-end pt-2">
-            <Button variant="secondary" size="xs" onClick={() => { setShowCreateS(false); setFormS(EMPTY_SERVICE); setSErrors({}); }}>Cancel</Button>
-            <Button variant="primary" size="xs" onClick={handleCreateService} loading={saving}>Create Service</Button>
-          </div>
-        </div>
-      </Modal>
+            rows={3} placeholder="Describe the service to be provided…" error={sErrors.description} />
 
-      {/* Compliance Gate Modal */}
-      <Modal open={complianceBlock !== null} onClose={() => setComplianceBlock(null)} title="Compliance Check Required">
-        <div className="space-y-3">
-          <div className="flex items-start gap-2.5 p-3 rounded-xl bg-red-50 dark:bg-red-900/15 border border-red-200 dark:border-red-700/40">
-            <span className="text-red-500 mt-0.5 shrink-0">✕</span>
-            <p className="text-sm font-semibold text-red-700 dark:text-red-400">{complianceBlock?.message}</p>
+          {/* Price — with live contract budget breakdown */}
+          <div>
+            <FormInput label="Price (₹)" required type="number" min="0.01" step="0.01"
+              value={formS.price}
+              onChange={e => { setS('price')(e); if (e.target.value) setSErrors(p => ({ ...p, price: '' })); }}
+              placeholder="0.00"
+              hint="This price will be used for service invoice generation"
+              error={sErrors.price} />
+            <ContractBudgetBreakdown
+              contractId={formS.contractId ? Number(formS.contractId) : null}
+              currentPrice={formS.price}
+              onBudgetStatus={setSBudgetExceeded}
+            />
           </div>
-          <p className="text-xs text-slate-500 dark:text-slate-400 whitespace-pre-line leading-relaxed">{complianceBlock?.hint}</p>
-          <div className="flex justify-end pt-2">
-            <Button variant="secondary" size="xs" onClick={() => setComplianceBlock(null)}>Close</Button>
+
+          {/* Completion Date — must be within contract period */}
+          {(() => {
+            const selectedContract = contracts.find(c => String(c.contractId) === String(formS.contractId));
+            return (
+              <FormInput label="Expected Completion Date" required
+                type="date"
+                min={selectedContract?.startDate || undefined}
+                max={selectedContract?.endDate   || undefined}
+                hint={selectedContract
+                  ? `Must be within contract period: ${selectedContract.startDate} → ${selectedContract.endDate}`
+                  : 'Select a contract first'}
+                value={formS.completionDate}
+                onChange={e => { setS('completionDate')(e); if (e.target.value) setSErrors(p => ({ ...p, completionDate: '' })); }}
+                error={sErrors.completionDate}
+              />
+            );
+          })()}
+
+          <FormTextarea label="Remarks" value={formS.remarks} onChange={setS('remarks')} rows={2} placeholder="Optional remarks…" />
+
+          <div className="flex gap-2 justify-end pt-2">
+            <Button variant="secondary" size="xs"
+              onClick={() => { setShowCreateS(false); setFormS(EMPTY_SERVICE); setSErrors({}); setSBudgetExceeded(false); }}>Cancel</Button>
+            <Button variant="primary" size="xs" onClick={handleCreateService} loading={saving}
+              disabled={saving || sBudgetExceeded}>
+              Create Service
+            </Button>
           </div>
         </div>
       </Modal>

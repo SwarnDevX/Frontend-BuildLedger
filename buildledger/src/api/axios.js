@@ -29,12 +29,7 @@ api.interceptors.request.use(
 api.interceptors.response.use(
   (response) => response,
   (error) => {
-    if (
-      error.response?.status === 401 &&
-      !error.config.url.includes('/auth/login') &&
-      !error.config.url.includes('/vendors/auth/login') &&
-      !error.config.url.includes('/users/change-password')  // ← ADD
-    ) {
+    if (error.response?.status === 401 && !error.config.url.includes('/auth/login') && !error.config.url.includes('/vendors/auth/login')) {
       localStorage.removeItem('bl_token');
       localStorage.removeItem('bl_user');
       window.location.href = '/login';

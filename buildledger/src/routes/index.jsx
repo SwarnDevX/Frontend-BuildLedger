@@ -14,25 +14,15 @@ import ComplianceAudit from '../pages/ComplianceAudit';
 import AdminPanel from '../pages/AdminPanel';
 import Notifications from '../pages/Notifications';
 import VendorDashboard from '../pages/VendorDashboard';
+import VendorContracts from '../pages/VendorContracts';
 import ProjectManagement from '../pages/ProjectManagement';
-import { useAuth } from '../context/AuthContext';
-import ChangePassword from '../pages/ChangePassword';
-
-function DashboardRouter() {
-  const { user } = useAuth();
-  if (user?.role === 'COMPLIANCE_OFFICER') return <ComplianceDashboard />;
-  return <Dashboard />;
-}
- 
 
 export const router = createBrowserRouter([
   // Public routes
   { path: '/login', element: <Login /> },
-  { path: '/change-password', element: <ChangePassword /> }, 
   { path: '/vendor/register', element: <VendorOnboarding /> },
   { path: '/vendor/reupload-documents', element: <VendorReuploadDocuments /> },
   { path: '/unauthorized', element: <Unauthorized /> },
-  
 
   // Protected app shell
   {
@@ -61,6 +51,15 @@ export const router = createBrowserRouter([
           </ProtectedRoute>
         ),
       },
+      // Vendor contracts
+      {
+        path: 'vendor/contracts',
+        element: (
+          <ProtectedRoute roles={['VENDOR']}>
+            <VendorContracts />
+          </ProtectedRoute>
+        ),
+      },
       // Vendor management
       {
         path: 'vendors',
@@ -79,16 +78,16 @@ export const router = createBrowserRouter([
           </ProtectedRoute>
         ),
       },
-      // Contracts (admin/PM manage, vendors view & respond)
+      // Contracts
       {
         path: 'contracts',
         element: (
-          <ProtectedRoute roles={['ADMIN', 'PROJECT_MANAGER', 'VENDOR']}>
+          <ProtectedRoute roles={['ADMIN', 'PROJECT_MANAGER']}>
             <ContractManagement />
           </ProtectedRoute>
         ),
       },
-      // Deliveries & Services
+      // Deliveries
       {
         path: 'deliveries',
         element: (
@@ -101,7 +100,7 @@ export const router = createBrowserRouter([
       {
         path: 'invoices',
         element: (
-          <ProtectedRoute roles={['ADMIN', 'FINANCE_OFFICER', 'VENDOR']}>
+          <ProtectedRoute roles={['ADMIN', 'FINANCE_OFFICER']}>
             <InvoicePayment />
           </ProtectedRoute>
         ),

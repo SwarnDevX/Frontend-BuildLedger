@@ -15,6 +15,9 @@ import ProjectCard from './ProjectCard';
 import ProjectDetailModal from './ProjectDetailModal';
 import { STATUS_OPTIONS, TERMINAL_PROJECT, EMPTY_FORM } from './projectConstants';
 
+// Today's date in YYYY-MM-DD — used as min for date inputs to blur past dates
+const TODAY = new Date().toISOString().split('T')[0];
+
 /**
  * ProjectManagement — main page.
  *
@@ -47,6 +50,15 @@ export default function ProjectManagement() {
     if (!form.budget)    e.budget    = 'Budget is required';
     if (!form.startDate) e.startDate = 'Start date is required';
     if (!form.endDate)   e.endDate   = 'End date is required';
+
+    // Start date cannot be in the past
+    if (form.startDate && form.startDate < TODAY)
+      e.startDate = 'Start date cannot be in the past';
+
+    // End date must be after start date
+    if (form.startDate && form.endDate && form.endDate <= form.startDate)
+      e.endDate = 'End date must be after start date';
+
     setFormErrors(e);
     return Object.keys(e).length === 0;
   };
@@ -200,10 +212,20 @@ export default function ProjectManagement() {
                 <option value="">Select manager…</option>
                 {managers.map(m => <option key={m.userId} value={m.username}>{m.username}</option>)}
               </FormSelect>
-              <FormInput label="Start Date" required type="date" value={form.startDate}
-                onChange={e => { set('startDate')(e); clearError('startDate'); }} error={formErrors.startDate} />
-              <FormInput label="End Date" required type="date" value={form.endDate}
-                onChange={e => { set('endDate')(e); clearError('endDate'); }} error={formErrors.endDate} />
+
+              {/* Start Date — min=TODAY blurs all past dates in the calendar */}
+              <FormInput label="Start Date" required type="date"
+                value={form.startDate}
+                min={TODAY}
+                onChange={e => { set('startDate')(e); clearError('startDate'); clearError('endDate'); }}
+                error={formErrors.startDate} />
+
+              {/* End Date — min=startDate so end can never be before start */}
+              <FormInput label="End Date" required type="date"
+                value={form.endDate}
+                min={form.startDate || TODAY}
+                onChange={e => { set('endDate')(e); clearError('endDate'); }}
+                error={formErrors.endDate} />
             </div>
             <FormTextarea label="Description" value={form.description} onChange={set('description')}
               placeholder="Optional project description…" />

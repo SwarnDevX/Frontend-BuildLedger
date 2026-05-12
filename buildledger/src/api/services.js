@@ -7,5 +7,5 @@ export const updateService       = (id, data)     => api.put(`/services/${id}`, 
 export const deleteService       = (id)           => api.delete(`/services/${id}`);
 export const updateServiceStatus = (id, status)   => api.patch(`/services/${id}/status?status=${status}`);
 export const getServicesByContract = (contractId) => api.get(`/services/contract/${contractId}`);
+// Used by ComplianceAudit — fetches services filtered by status
 export const getServicesByStatus   = (status)     => api.get(`/services/status/${status}`);
-

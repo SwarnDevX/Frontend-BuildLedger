@@ -7,5 +7,7 @@ export const updateDelivery        = (id, data)     => api.put(`/deliveries/${id
 export const deleteDelivery        = (id)           => api.delete(`/deliveries/${id}`);
 export const updateDeliveryStatus  = (id, status)   => api.patch(`/deliveries/${id}/status?status=${status}`);
 export const getDeliveriesByContract  = (contractId) => api.get(`/deliveries/contract/${contractId}`);
-export const getDeliveriesByStatus    = (status)     => api.get(`/deliveries/status/${status}`);
-
+// Contract-level budget: contractValue - sum(delivery prices) - sum(service prices)
+export const getContractBudgetSummary = (contractId) => api.get(`/deliveries/contract/${contractId}/budget-summary`);
+// Used by ComplianceAudit — fetches deliveries filtered by status
+export const getDeliveriesByStatus   = (status)     => api.get(`/deliveries/status/${status}`);

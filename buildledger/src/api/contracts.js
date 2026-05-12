@@ -1,7 +1,10 @@
 import api from './axios';
 
 export const getAllContracts          = ()                              => api.get('/contracts');
-export const getMyContracts          = ()                              => api.get('/contracts/manager/my'); // PM only
+export const getMyContracts          = ()                              => api.get('/contracts/manager/my');
+// Vendor-specific — returns only contracts assigned to the logged-in vendor
+// Used in DeliveryTracking so vendor can see their ACTIVE contracts in the dropdown
+export const getVendorContracts      = ()                              => api.get('/contracts/vendor/my');
 export const getContractById         = (id)                            => api.get(`/contracts/${id}`);
 export const createContract          = (data)                          => api.post('/contracts', data);
 export const updateContract          = (id, data)                      => api.put(`/contracts/${id}`, data);
