@@ -11,8 +11,8 @@ import { getAllCompliance, createCompliance, updateComplianceStatus } from '../.
 import { getAllAudits, createAudit, updateAuditStatus, getAuditLogsByComplianceRecord } from '../../api/audits';
 import { getAllUsers } from '../../api/users';
 import { getCompliancePageSummary } from '../../api/reports';
-import { getDeliveriesByStatus } from '../../api/deliveries';
-import { getServicesByStatus } from '../../api/services';
+import { getAllDeliveries } from '../../api/deliveries';
+import { getAllServices } from '../../api/services';
 import { useAuth } from '../../context/AuthContext';
 import { useTheme } from '../../context/ThemeContext';
 import toast from 'react-hot-toast';
@@ -26,33 +26,29 @@ const REFERENCE_ID_HINT = {
 const PIE_COLORS       = ['#22C55E', '#F59E0B', '#EF4444'];
 
 const COMPLIANCE_TRANSITIONS = {
-  PENDING:      ['UNDER_REVIEW'],
-  UNDER_REVIEW: ['PASSED', 'FAILED', 'WAIVED'],
-  FAILED:       ['PENDING'],
-  PASSED:       [], WAIVED: [],
+  PENDING:      ['PASSED', 'FAILED'],
+  UNDER_REVIEW: ['PASSED', 'FAILED'],
+  FAILED:       [],
+  PASSED:       [],
 };
 const COMPLIANCE_TRANSITION_LABELS = {
   UNDER_REVIEW: { label: 'Start Review', color: '#3b82f6' },
   PASSED:       { label: 'Mark Passed',  color: '#22C55E' },
   FAILED:       { label: 'Mark Failed',  color: '#EF4444' },
-  WAIVED:       { label: 'Waive',        color: '#94a3b8' },
   PENDING:      { label: 'Re-open',      color: '#F59E0B' },
 };
 const AUDIT_TRANSITIONS = {
-  SCHEDULED:      ['IN_PROGRESS'],
   IN_PROGRESS:    ['PENDING_REVIEW'],
   PENDING_REVIEW: ['COMPLETED', 'CANCELLED'],
   COMPLETED:      [],
   CANCELLED:      [],
 };
 const AUDIT_TRANSITION_LABELS = {
-  IN_PROGRESS:    { label: 'Start',          color: '#2563EB' },
   PENDING_REVIEW: { label: 'Pending Review', color: '#8B5CF6' },
   COMPLETED:      { label: 'Complete',       color: '#22C55E' },
   CANCELLED:      { label: 'Cancel',         color: '#EF4444' },
 };
 const AUDIT_STATUS_MAP = {
-  SCHEDULED:      { color: '#2563EB', label: 'Scheduled'      },
   IN_PROGRESS:    { color: '#F59E0B', label: 'In Progress'    },
   PENDING_REVIEW: { color: '#8B5CF6', label: 'Pending Review' },
   COMPLETED:      { color: '#22C55E', label: 'Completed'      },
@@ -64,7 +60,7 @@ const AUDIT_ROLE_RULES = {
   COMPLETED:      ['COMPLIANCE_OFFICER', 'ADMIN'],
   CANCELLED:      ['COMPLIANCE_OFFICER', 'ADMIN'],
 };
-const AUDIT_FILTER_OPTIONS = ['All', 'SCHEDULED', 'IN_PROGRESS', 'PENDING_REVIEW', 'COMPLETED', 'CANCELLED'];
+const AUDIT_FILTER_OPTIONS = ['All', 'IN_PROGRESS', 'PENDING_REVIEW', 'COMPLETED', 'CANCELLED'];
 
 function showErrors(err) {
   const apiErrors = err.response?.data?.data;
@@ -151,10 +147,6 @@ export default function ComplianceAudit() {
   const [savingPass,       setSavingPass]       = useState(false);
   const [referenceIdLocked,    setReferenceIdLocked]    = useState(false);
   const [complianceSearch,     setComplianceSearch]     = useState('');
-  const [showStartReviewModal, setShowStartReviewModal] = useState(false);
-  const [pendingStartReviewId, setPendingStartReviewId] = useState(null);
-  const [startReviewFindings,  setStartReviewFindings]  = useState('');
-  const [savingStartReview,    setSavingStartReview]    = useState(false);
   const [showAuditModal,       setShowAuditModal]       = useState(false);
   const [selectedComplianceId, setSelectedComplianceId] = useState(null);
   const [auditEntries,         setAuditEntries]         = useState([]);
@@ -170,21 +162,27 @@ export default function ComplianceAudit() {
   const [pendingCancelAuditId,     setPendingCancelAuditId]     = useState(null);
   const [cancelAuditReason,        setCancelAuditReason]        = useState('');
   const [savingCancelAudit,        setSavingCancelAudit]        = useState(false);
+  const [failRemarksError,         setFailRemarksError]         = useState('');
+  const [passNotesError,           setPassNotesError]           = useState('');
+  const [completeFindingsError,    setCompleteFindingsError]    = useState('');
+  const [cancelReasonError,        setCancelReasonError]        = useState('');
 
   const canManage = ['ADMIN', 'COMPLIANCE_OFFICER'].includes(user?.role);
-  const today     = new Date().toISOString().split('T')[0];
+  const today = (() => { const d = new Date(); return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`; })();
 
   const fetchData = async () => {
     setLoading(true);
     try {
       const [c, a, usr, sum, md, cs] = await Promise.allSettled([
         getAllCompliance(), getAllAudits(), getAllUsers(), getCompliancePageSummary(),
-        getDeliveriesByStatus('MARKED_DELIVERED'),
-        getServicesByStatus('COMPLETED'),
+        getAllDeliveries(),
+        getAllServices(),
       ]);
       const allCompliance   = c.status  === 'fulfilled' ? (c.value.data?.data  || []) : [];
-      const allMarkDel      = md.status === 'fulfilled' ? (md.value.data?.data || []) : [];
-      const allCompleted    = cs.status === 'fulfilled' ? (cs.value.data?.data || []) : [];
+      const allDeliveries   = md.status === 'fulfilled' ? (md.value.data?.data || md.value.data || []) : [];
+      const allServices     = cs.status === 'fulfilled' ? (cs.value.data?.data || cs.value.data || []) : [];
+      const allMarkDel      = allDeliveries.filter(d => d.status === 'MARKED_DELIVERED');
+      const allCompleted    = allServices.filter(s => s.status === 'COMPLETED');
       setCompliance(allCompliance);
       setAudits(a.status === 'fulfilled'    ? (a.value.data?.data || []) : []);
       setComplianceSummary(sum.status === 'fulfilled' ? sum.value.data : null);
@@ -232,15 +230,14 @@ export default function ComplianceAudit() {
 
   const handleCreateCompliance = async () => {
     const e = {};
-    if (!formC.contractId)                            e.contractId = 'Reference ID is required';
-    if (!formC.type)                                  e.type       = 'Compliance type is required';
-    if (!formC.date)                                  e.date       = 'Date is required';
-    if (!formC.notes || formC.notes.trim().length < 10) e.notes    = 'Notes are required (min 10 characters)';
+    if (!formC.contractId)                              e.contractId = 'Reference ID is required';
+    if (!formC.type)                                    e.type       = 'Compliance type is required';
+    if (!formC.notes || formC.notes.trim().length < 10) e.notes      = 'Notes are required (min 10 characters)';
     setCErrors(e);
     if (Object.keys(e).length) return;
     setSaving(true);
     try {
-      await createCompliance({ contractId: Number(formC.contractId), type: formC.type, date: formC.date, notes: formC.notes.trim() });
+      await createCompliance({ contractId: Number(formC.contractId), type: formC.type, date: today, notes: formC.notes.trim() });
       toast.success('Compliance record created');
       closeCreateModal(); fetchData();
     } catch (err) { showErrors(err); }
@@ -256,7 +253,7 @@ export default function ComplianceAudit() {
     if (Object.keys(e).length) return;
     setSaving(true);
     try {
-      await createAudit({ complianceOfficerId: Number(formA.complianceOfficerId), scope: formA.scope, findings: formA.findings || undefined, date: formA.date });
+      await createAudit({ complianceOfficerId: Number(formA.complianceOfficerId), scope: formA.scope, findings: formA.findings || undefined, date: today });
       toast.success('Audit scheduled');
       setShowCreateA(false); setFormA(EMPTY_AUDIT); setAErrors({}); fetchData();
     } catch (err) { showErrors(err); }
@@ -264,21 +261,17 @@ export default function ComplianceAudit() {
   };
 
   const handleComplianceTransition = async (id, nextStatus) => {
-    if (nextStatus === 'UNDER_REVIEW') {
-      setPendingStartReviewId(id);
-      setStartReviewFindings('');
-      setShowStartReviewModal(true);
-      return;
-    }
     if (nextStatus === 'FAILED') {
       setPendingFailId(id);
       setFailRemarks('');
+      setFailRemarksError('');
       setShowFailModal(true);
       return;
     }
     if (nextStatus === 'PASSED') {
       setPendingPassId(id);
       setPassNotes('');
+      setPassNotesError('');
       setShowPassModal(true);
       return;
     }
@@ -289,56 +282,40 @@ export default function ComplianceAudit() {
   };
 
   const handleConfirmFail = async () => {
-    if (!failRemarks.trim()) { toast.error('Remarks are required when marking as FAILED'); return; }
+    if (!failRemarks.trim()) { setFailRemarksError('Remarks are required'); return; }
     setSavingFail(true);
     setCLoading(p => ({ ...p, [pendingFailId]: true }));
     try {
       await updateComplianceStatus(pendingFailId, 'FAILED', failRemarks.trim());
       toast.success('Compliance → FAILED');
-      setShowFailModal(false); setPendingFailId(null); setFailRemarks('');
+      setShowFailModal(false); setPendingFailId(null); setFailRemarks(''); setFailRemarksError('');
       fetchData();
     } catch (err) { showErrors(err); }
     finally { setSavingFail(false); setCLoading(p => ({ ...p, [pendingFailId]: false })); }
   };
 
   const handleConfirmPass = async () => {
-    if (!passNotes.trim() || passNotes.trim().length < 10) { toast.error('Notes are required (min 10 characters)'); return; }
+    if (!passNotes.trim() || passNotes.trim().length < 10) { setPassNotesError('Notes are required (min 10 characters)'); return; }
     setSavingPass(true);
     setCLoading(p => ({ ...p, [pendingPassId]: true }));
     try {
       await updateComplianceStatus(pendingPassId, 'PASSED', passNotes.trim());
       toast.success('Compliance → PASSED');
-      setShowPassModal(false); setPendingPassId(null); setPassNotes('');
+      setShowPassModal(false); setPendingPassId(null); setPassNotes(''); setPassNotesError('');
       fetchData();
     } catch (err) { showErrors(err); }
     finally { setSavingPass(false); setCLoading(p => ({ ...p, [pendingPassId]: false })); }
   };
 
-  const handleConfirmStartReview = async () => {
-    if (!startReviewFindings.trim() || startReviewFindings.trim().length < 10) {
-      toast.error('Findings are required (min 10 characters)');
-      return;
-    }
-    setSavingStartReview(true);
-    setCLoading(p => ({ ...p, [pendingStartReviewId]: true }));
-    try {
-      await updateComplianceStatus(pendingStartReviewId, 'UNDER_REVIEW', startReviewFindings.trim());
-      toast.success('Compliance → UNDER REVIEW');
-      setShowStartReviewModal(false); setPendingStartReviewId(null); setStartReviewFindings('');
-      fetchData();
-    } catch (err) { showErrors(err); }
-    finally { setSavingStartReview(false); setCLoading(p => ({ ...p, [pendingStartReviewId]: false })); }
-  };
-
   const openCreateForDelivery = (deliveryId) => {
-    setFormC({ ...EMPTY_COMPLIANCE, type: 'DELIVERY_CHECK', contractId: String(deliveryId) });
+    setFormC({ ...EMPTY_COMPLIANCE, type: 'DELIVERY_CHECK', contractId: String(deliveryId), date: today });
     setCErrors({});
     setReferenceIdLocked(true);
     setShowCreateC(true);
   };
 
   const openCreateForService = (service) => {
-    setFormC({ ...EMPTY_COMPLIANCE, type: 'SERVICE_CHECK', contractId: String(service.serviceId) });
+    setFormC({ ...EMPTY_COMPLIANCE, type: 'SERVICE_CHECK', contractId: String(service.serviceId), date: today });
     setCErrors({});
     setReferenceIdLocked(true);
     setShowCreateC(true);
@@ -355,12 +332,14 @@ export default function ComplianceAudit() {
     if (nextStatus === 'COMPLETED') {
       setPendingCompleteAuditId(id);
       setCompleteAuditFindings('');
+      setCompleteFindingsError('');
       setShowCompleteAuditModal(true);
       return;
     }
     if (nextStatus === 'CANCELLED') {
       setPendingCancelAuditId(id);
       setCancelAuditReason('');
+      setCancelReasonError('');
       setShowCancelAuditModal(true);
       return;
     }
@@ -372,7 +351,7 @@ export default function ComplianceAudit() {
 
   const handleConfirmCompleteAudit = async () => {
     if (!completeAuditFindings.trim() || completeAuditFindings.trim().length < 10) {
-      toast.error('Findings are required (min 10 characters) to complete an audit');
+      setCompleteFindingsError('Findings are required (min 10 characters)');
       return;
     }
     setSavingCompleteAudit(true);
@@ -380,7 +359,7 @@ export default function ComplianceAudit() {
     try {
       await updateAuditStatus(pendingCompleteAuditId, 'COMPLETED', completeAuditFindings.trim());
       toast.success('Audit → COMPLETED');
-      setShowCompleteAuditModal(false); setPendingCompleteAuditId(null); setCompleteAuditFindings('');
+      setShowCompleteAuditModal(false); setPendingCompleteAuditId(null); setCompleteAuditFindings(''); setCompleteFindingsError('');
       fetchData();
     } catch (err) { showErrors(err); }
     finally { setSavingCompleteAudit(false); setALoading(p => ({ ...p, [pendingCompleteAuditId]: false })); }
@@ -388,7 +367,7 @@ export default function ComplianceAudit() {
 
   const handleConfirmCancelAudit = async () => {
     if (!cancelAuditReason.trim()) {
-      toast.error('A reason is required when cancelling an audit');
+      setCancelReasonError('A reason is required');
       return;
     }
     setSavingCancelAudit(true);
@@ -396,7 +375,7 @@ export default function ComplianceAudit() {
     try {
       await updateAuditStatus(pendingCancelAuditId, 'CANCELLED', cancelAuditReason.trim());
       toast.success('Audit → CANCELLED');
-      setShowCancelAuditModal(false); setPendingCancelAuditId(null); setCancelAuditReason('');
+      setShowCancelAuditModal(false); setPendingCancelAuditId(null); setCancelAuditReason(''); setCancelReasonError('');
       fetchData();
     } catch (err) { showErrors(err); }
     finally { setSavingCancelAudit(false); setALoading(p => ({ ...p, [pendingCancelAuditId]: false })); }
@@ -431,10 +410,10 @@ export default function ComplianceAudit() {
           <>
             <Button variant="secondary" size="xs" icon={<RefreshCw size={13} />} onClick={fetchData}>Refresh</Button>
             {canManage && tab === 'compliance' && (
-              <Button variant="secondary" size="xs" icon={<Plus size={13} />} onClick={() => setShowCreateC(true)}>Compliance</Button>
+              <Button variant="primary" size="xs" icon={<Plus size={13} />} onClick={() => { setFormC({ ...EMPTY_COMPLIANCE, date: today }); setCErrors({}); setReferenceIdLocked(false); setShowCreateC(true); }}>Compliance</Button>
             )}
             {canManage && tab === 'audit' && (
-              <Button variant="primary" size="xs" icon={<Plus size={13} />} onClick={() => setShowCreateA(true)}>Audit</Button>
+              <Button variant="primary" size="xs" icon={<Plus size={13} />} onClick={() => { setFormA({ ...EMPTY_AUDIT, date: today, complianceOfficerId: String(user.userId) }); setAErrors({}); setShowCreateA(true); }}>Audit</Button>
             )}
           </>
         }
@@ -629,8 +608,8 @@ export default function ComplianceAudit() {
         <div className="overflow-x-auto">
           <Table elevated={false}>
             <TableHead>
-              {['ID', 'Reference ID', 'Type', 'Date', 'Status', '', canManage ? 'Actions' : ''].filter(Boolean).map(h => (
-                <TableHeader key={h}>{h}</TableHeader>
+              {['ID', 'Reference ID', 'Type', 'Date', 'Status', '', ...(canManage ? ['Actions'] : [])].map((h, i) => (
+                <TableHeader key={i}>{h}</TableHeader>
               ))}
             </TableHead>
             <TableBody>
@@ -866,25 +845,6 @@ export default function ComplianceAudit() {
 
           </div>
 
-      {/* Audit Status Stats */}
-      <div className="grid grid-cols-3 lg:grid-cols-5 gap-3">
-        {Object.entries(AUDIT_STATUS_MAP).map(([status, { color, label }]) => {
-          const count   = audits.filter(a => a.status === status).length;
-          const active  = auditStatusFilter === status;
-          return (
-            <div
-              key={status}
-              onClick={() => setAuditStatusFilter(active ? 'All' : status)}
-              className="glass-card p-3 text-center cursor-pointer transition-all hover:scale-[1.02] select-none"
-              style={{ borderLeft: `3px solid ${active ? color : 'transparent'}` }}
-            >
-              <p className="text-xl font-bold" style={{ color }}>{count}</p>
-              <p className="text-[10px] text-slate-400 dark:text-slate-500 mt-0.5 leading-tight">{label}</p>
-            </div>
-          );
-        })}
-      </div>
-
       {/* Audit Records Table */}
       <SectionCard
         title="Audit Records"
@@ -910,8 +870,8 @@ export default function ComplianceAudit() {
         <div className="overflow-x-auto">
           <Table elevated={false}>
             <TableHead>
-              {['ID', 'Officer', 'Scope', 'Scheduled Date', 'Status', '', canManage ? 'Actions' : ''].filter(Boolean).map(h => (
-                <TableHeader key={h}>{h}</TableHeader>
+              {['ID', 'Officer', 'Scope', 'Scheduled Date', 'Status', '', ...(canManage ? ['Actions'] : [])].map((h, i) => (
+                <TableHeader key={i}>{h}</TableHeader>
               ))}
             </TableHead>
             <TableBody>
@@ -1005,8 +965,11 @@ export default function ComplianceAudit() {
             required
             type="date"
             min={today}
-            value={formC.date}
-            onChange={e => { setC('date')(e); if (e.target.value) setCErrors(p => ({ ...p, date: '' })); }}
+            max={today}
+            value={today}
+            onChange={() => {}}
+            disabled
+            hint="Automatically set to today's date"
             error={cErrors.date}
           />
           <FormTextarea
@@ -1028,7 +991,7 @@ export default function ComplianceAudit() {
       {/* Mark Failed — Remarks Modal */}
       <Modal
         open={showFailModal}
-        onClose={() => { setShowFailModal(false); setPendingFailId(null); setFailRemarks(''); }}
+        onClose={() => { setShowFailModal(false); setPendingFailId(null); setFailRemarks(''); setFailRemarksError(''); }}
         title={`Mark Compliance #${pendingFailId} as FAILED`}
       >
         <div className="space-y-4">
@@ -1041,12 +1004,13 @@ export default function ComplianceAudit() {
             label="Failure Remarks"
             required
             value={failRemarks}
-            onChange={e => setFailRemarks(e.target.value)}
+            onChange={e => { setFailRemarks(e.target.value); if (e.target.value.trim()) setFailRemarksError(''); }}
             rows={3}
             placeholder="Describe why this compliance check failed…"
+            error={failRemarksError}
           />
           <div className="flex gap-2 justify-end pt-2">
-            <Button variant="secondary" size="xs" onClick={() => { setShowFailModal(false); setPendingFailId(null); setFailRemarks(''); }}>
+            <Button variant="secondary" size="xs" onClick={() => { setShowFailModal(false); setPendingFailId(null); setFailRemarks(''); setFailRemarksError(''); }}>
               Cancel
             </Button>
             <Button variant="danger" size="xs" onClick={handleConfirmFail} loading={savingFail}>
@@ -1056,41 +1020,10 @@ export default function ComplianceAudit() {
         </div>
       </Modal>
 
-      {/* Start Review — Findings Modal */}
-      <Modal
-        open={showStartReviewModal}
-        onClose={() => { setShowStartReviewModal(false); setPendingStartReviewId(null); setStartReviewFindings(''); }}
-        title={`Start Compliance Review #${pendingStartReviewId}`}
-      >
-        <div className="space-y-4">
-          <div className="p-3 rounded-xl bg-blue-50 dark:bg-blue-900/15 border border-blue-200 dark:border-blue-700/40">
-            <p className="text-xs text-blue-700 dark:text-blue-400">
-              Initial findings are <strong>required</strong> (min 10 characters) before starting review.
-            </p>
-          </div>
-          <FormTextarea
-            label="Initial Findings"
-            required
-            value={startReviewFindings}
-            onChange={e => setStartReviewFindings(e.target.value)}
-            rows={3}
-            placeholder="Describe your initial findings before starting review..."
-          />
-          <div className="flex gap-2 justify-end pt-2">
-            <Button variant="secondary" size="xs" onClick={() => { setShowStartReviewModal(false); setPendingStartReviewId(null); setStartReviewFindings(''); }}>
-              Cancel
-            </Button>
-            <Button variant="primary" size="xs" onClick={handleConfirmStartReview} loading={savingStartReview}>
-              Start Review
-            </Button>
-          </div>
-        </div>
-      </Modal>
-
       {/* Mark Passed — Notes Modal */}
       <Modal
         open={showPassModal}
-        onClose={() => { setShowPassModal(false); setPendingPassId(null); setPassNotes(''); }}
+        onClose={() => { setShowPassModal(false); setPendingPassId(null); setPassNotes(''); setPassNotesError(''); }}
         title="Pass Compliance Check"
       >
         <div className="space-y-4">
@@ -1103,12 +1036,13 @@ export default function ComplianceAudit() {
             label="Pass Notes"
             required
             value={passNotes}
-            onChange={e => setPassNotes(e.target.value)}
+            onChange={e => { setPassNotes(e.target.value); if (e.target.value.trim().length >= 10) setPassNotesError(''); }}
             rows={3}
             placeholder="Add notes about why this compliance check is being passed..."
+            error={passNotesError}
           />
           <div className="flex gap-2 justify-end pt-2">
-            <Button variant="secondary" size="xs" onClick={() => { setShowPassModal(false); setPendingPassId(null); setPassNotes(''); }}>
+            <Button variant="secondary" size="xs" onClick={() => { setShowPassModal(false); setPendingPassId(null); setPassNotes(''); setPassNotesError(''); }}>
               Cancel
             </Button>
             <Button variant="primary" size="xs" onClick={handleConfirmPass} loading={savingPass}
@@ -1236,10 +1170,11 @@ export default function ComplianceAudit() {
             value={formA.complianceOfficerId}
             onChange={e => { setA('complianceOfficerId')(e); if (e.target.value) setAErrors(p => ({ ...p, complianceOfficerId: '' })); }}
             error={aErrors.complianceOfficerId}
-            hint={officers.length === 0 ? 'No compliance officers found.' : ''}
           >
             <option value="">Select officer…</option>
-            {officers.map(o => <option key={o.userId} value={o.userId}>{o.name || o.username} ({o.role})</option>)}
+            {(officers.length > 0 ? officers : [user]).filter(Boolean).map(o => (
+              <option key={o.userId} value={o.userId}>{o.name || o.username} ({o.role})</option>
+            ))}
           </FormSelect>
           <FormTextarea
             label="Scope"
@@ -1256,14 +1191,17 @@ export default function ComplianceAudit() {
             required
             type="date"
             min={today}
-            value={formA.date}
-            onChange={e => { setA('date')(e); if (e.target.value) setAErrors(p => ({ ...p, date: '' })); }}
+            max={today}
+            value={today}
+            onChange={() => {}}
+            disabled
+            hint="Automatically set to today's date"
             error={aErrors.date}
           />
           <FormTextarea label="Initial Findings" hint="(optional)" value={formA.findings} onChange={setA('findings')} rows={2} />
           <div className="flex gap-2 justify-end pt-2">
             <Button variant="secondary" size="xs" onClick={() => { setShowCreateA(false); setFormA(EMPTY_AUDIT); setAErrors({}); }}>Cancel</Button>
-            <Button variant="primary" size="xs" onClick={handleCreateAudit} loading={saving}>Schedule Audit</Button>
+            <Button variant="primary" size="xs" onClick={handleCreateAudit} loading={saving}>Create Audit</Button>
           </div>
         </div>
       </Modal>

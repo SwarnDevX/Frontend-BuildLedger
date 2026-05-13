@@ -13,8 +13,8 @@ import {
 import { getCompliancePageSummary } from '../../api/reports';
 import { getAllCompliance } from '../../api/compliance';
 import { getAllAudits } from '../../api/audits';
-import { getDeliveriesByStatus } from '../../api/deliveries';
-import { getServicesByStatus } from '../../api/services';
+import { getAllDeliveries } from '../../api/deliveries';
+import { getAllServices } from '../../api/services';
 import toast from 'react-hot-toast';
 
 const BREAKDOWN = [
@@ -40,12 +40,14 @@ export default function ComplianceDashboard() {
         getCompliancePageSummary(),
         getAllCompliance(),
         getAllAudits(),
-        getDeliveriesByStatus('MARKED_DELIVERED'),
-        getServicesByStatus('COMPLETED'),
+        getAllDeliveries(),
+        getAllServices(),
       ]);
       const allCompliance = c.status === 'fulfilled' ? (c.value.data?.data || []) : [];
-      const allMarkDel    = md.status === 'fulfilled' ? (md.value.data?.data || []) : [];
-      const allCompleted  = cs.status === 'fulfilled' ? (cs.value.data?.data || []) : [];
+      const allDeliveries = md.status === 'fulfilled' ? (md.value.data?.data || md.value.data || []) : [];
+      const allServices   = cs.status === 'fulfilled' ? (cs.value.data?.data || cs.value.data || []) : [];
+      const allMarkDel    = allDeliveries.filter(d => d.status === 'MARKED_DELIVERED');
+      const allCompleted  = allServices.filter(s => s.status === 'COMPLETED');
 
       setSummary(s.status === 'fulfilled' ? s.value.data : null);
       setCompliance(allCompliance);
@@ -75,7 +77,7 @@ export default function ComplianceDashboard() {
 
   const openReviews    = compliance.filter(c => ['PENDING', 'UNDER_REVIEW'].includes(c.status));
   const passedWaived   = compliance.filter(c => ['PASSED', 'WAIVED'].includes(c.status));
-  const upcomingAudits = audits.filter(a => ['SCHEDULED', 'IN_PROGRESS'].includes(a.status));
+  const upcomingAudits = audits.filter(a => ['IN_PROGRESS', 'PENDING_REVIEW'].includes(a.status));
   const overallScore   = summary?.overallScore ?? 0;
 
   const kpis = [

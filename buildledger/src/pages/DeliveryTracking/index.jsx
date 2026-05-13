@@ -1,5 +1,5 @@
 import { useState, useEffect } from 'react';
-import { CheckCircle2, Clock, Truck, Package, RotateCcw, Calendar, Loader2, Plus, Wrench } from 'lucide-react';
+import { CheckCircle2, Clock, Truck, Package, RotateCcw, Calendar, Loader2, Plus, Wrench, Lock } from 'lucide-react';
 import Badge from '../../components/ui/Badge';
 import ProgressBar from '../../components/ui/ProgressBar';
 import Modal from '../../components/ui/Modal';
@@ -10,6 +10,7 @@ import {
 import { getAllDeliveries, createDelivery, updateDeliveryStatus } from '../../api/deliveries';
 import { getAllServices, createService, updateServiceStatus } from '../../api/services';
 import { getAllContracts, getVendorContracts } from '../../api/contracts';
+import { getAllCompliance } from '../../api/compliance';
 import { useAuth } from '../../context/AuthContext';
 import toast from 'react-hot-toast';
 
@@ -58,23 +59,26 @@ const SERVICE_STATUS_MAP = {
   IN_PROGRESS: { color: '#2563EB', label: 'In Progress' },
   COMPLETED:   { color: '#14B8A6', label: 'Completed'   },
   VERIFIED:    { color: '#22C55E', label: 'Verified'    },
+  UNVERIFIED:  { color: '#EF4444', label: 'Unverified'  },
 };
 
 const SERVICE_TRANSITIONS = {
   PENDING:     ['IN_PROGRESS'],
   IN_PROGRESS: ['COMPLETED'],
-  COMPLETED:   ['VERIFIED'],
+  COMPLETED:   ['VERIFIED', 'UNVERIFIED'],
   VERIFIED:    [],
+  UNVERIFIED:  [],
 };
 
 const SERVICE_ROLE_RULES = {
   IN_PROGRESS: ['VENDOR', 'ADMIN'],
   COMPLETED:   ['VENDOR', 'ADMIN'],
   VERIFIED:    ['PROJECT_MANAGER', 'ADMIN'],
+  UNVERIFIED:  ['PROJECT_MANAGER', 'ADMIN'],
 };
 
 function serviceProgress(status) {
-  return { PENDING: 10, IN_PROGRESS: 40, COMPLETED: 75, VERIFIED: 100 }[status] ?? 10;
+  return { PENDING: 10, IN_PROGRESS: 40, COMPLETED: 75, VERIFIED: 100, UNVERIFIED: 100 }[status] ?? 10;
 }
 
 function contractLabel(contracts, contractId) {
@@ -117,20 +121,25 @@ function Stepper({ status, steps }) {
   );
 }
 
-function ActionButtons({ transitions, roleRules, currentStatus, role, onTransition, loadingKey, itemKey }) {
+function ActionButtons({ transitions, roleRules, currentStatus, role, onTransition, loadingKey, itemKey, blockedTransitions = [], complianceLockedTransitions = [] }) {
   const available = (transitions[currentStatus] || []).filter(next =>
-    canDoTransition(transitions, roleRules, currentStatus, next, role));
+    canDoTransition(transitions, roleRules, currentStatus, next, role) && !blockedTransitions.includes(next));
   if (available.length === 0) return <span className="text-[11px] text-slate-400">—</span>;
   return (
     <div className="flex gap-1.5 flex-wrap">
       {available.map(next => {
-        const label = Object.assign({}, DELIVERY_STATUS_MAP, SERVICE_STATUS_MAP)[next]?.label || next;
-        const color = Object.assign({}, DELIVERY_STATUS_MAP, SERVICE_STATUS_MAP)[next]?.color || '#64748b';
+        const label   = Object.assign({}, DELIVERY_STATUS_MAP, SERVICE_STATUS_MAP)[next]?.label || next;
+        const color   = Object.assign({}, DELIVERY_STATUS_MAP, SERVICE_STATUS_MAP)[next]?.color || '#64748b';
+        const locked  = complianceLockedTransitions.includes(next);
         return (
           <button key={next} onClick={() => onTransition(itemKey, next)} disabled={loadingKey}
             className="text-[11px] px-2.5 py-1 rounded-lg font-semibold text-white disabled:opacity-50"
-            style={{ background: color }}>
-            {loadingKey ? <Loader2 size={10} className="animate-spin inline" /> : label}
+            style={{ background: locked ? '#94a3b8' : color }}>
+            {loadingKey
+              ? <Loader2 size={10} className="animate-spin inline" />
+              : locked
+                ? <><Lock size={10} className="inline mr-0.5 mb-px" />{label}</>
+                : label}
           </button>
         );
       })}
@@ -138,8 +147,8 @@ function ActionButtons({ transitions, roleRules, currentStatus, role, onTransiti
   );
 }
 
-const EMPTY_DELIVERY = { contractId: '', item: '', quantity: '', unit: '', date: '', remarks: '' };
-const EMPTY_SERVICE  = { contractId: '', description: '', completionDate: '', remarks: '' };
+const EMPTY_DELIVERY = { contractId: '', item: '', quantity: '', unit: '', date: new Date().toISOString().split('T')[0], remarks: '' };
+const EMPTY_SERVICE  = { contractId: '', description: '', completionDate: new Date().toISOString().split('T')[0], remarks: '' };
 
 const DELIVERY_FILTER_OPTIONS = ['All', ...Object.keys(DELIVERY_STATUS_MAP)].map(s => ({
   key: s, label: DELIVERY_STATUS_MAP[s]?.label || s,
@@ -166,8 +175,10 @@ export default function DeliveryTracking() {
   const [formS, setFormS]           = useState(EMPTY_SERVICE);
   const [saving, setSaving]         = useState(false);
   const [updating, setUpdating]     = useState({});
+  const [sBudgetExceeded, setSBudgetExceeded] = useState(false);
   const [dErrors, setDErrors]       = useState({});
   const [sErrors, setSErrors]       = useState({});
+  const [complianceRecords, setComplianceRecords] = useState([]);
 
   const canCreate = ['ADMIN', 'VENDOR'].includes(user?.role);
   const today     = new Date().toISOString().split('T')[0];
@@ -179,10 +190,11 @@ export default function DeliveryTracking() {
       // ADMIN / PM → getAllContracts()  → GET /contracts (all contracts)
       // This fixes the empty dropdown issue for vendors in Create Delivery modal
       const contractFn = user?.role === 'VENDOR' ? getVendorContracts : getAllContracts;
-      const [d, s, c] = await Promise.allSettled([getAllDeliveries(), getAllServices(), contractFn()]);
+      const [d, s, c, comp] = await Promise.allSettled([getAllDeliveries(), getAllServices(), contractFn(), getAllCompliance()]);
       setDeliveries(d.status === 'fulfilled' ? (d.value.data?.data || []) : []);
       setServices(s.status === 'fulfilled'   ? (s.value.data?.data || []) : []);
       setContracts(c.status === 'fulfilled'  ? (c.value.data?.data || []) : []);
+      setComplianceRecords(comp.status === 'fulfilled' ? (comp.value.data?.data || []) : []);
     } catch { toast.error('Failed to load data'); }
     finally { setLoading(false); }
   };
@@ -198,13 +210,12 @@ export default function DeliveryTracking() {
     if (!formD.quantity)    e.quantity  = 'Quantity is required';
     if (!formD.date)        e.date      = 'Delivery date is required';
 
-    // Validate delivery date is within contract period
-    if (formD.date && formD.contractId) {
-      const selectedContract = contracts.find(c => String(c.contractId) === String(formD.contractId));
-      if (selectedContract) {
-        if (formD.date < selectedContract.startDate)
-          e.date = `Date cannot be before contract start (${selectedContract.startDate})`;
-        else if (formD.date > selectedContract.endDate)
+    if (formD.date) {
+      if (formD.date < today)
+        e.date = 'Date cannot be before today';
+      else if (formD.contractId) {
+        const selectedContract = contracts.find(c => String(c.contractId) === String(formD.contractId));
+        if (selectedContract && formD.date > selectedContract.endDate)
           e.date = `Date cannot be after contract end (${selectedContract.endDate})`;
       }
     }
@@ -229,7 +240,33 @@ export default function DeliveryTracking() {
     finally { setSaving(false); }
   };
 
+  const isCompliancePassed = (type, id) =>
+    complianceRecords.some(
+      cr => cr.type === type &&
+            Number(cr.referenceId ?? cr.contractId) === id &&
+            cr.status === 'PASSED'
+    );
+
+  const isComplianceFailed = (type, id) =>
+    complianceRecords.some(
+      cr => cr.type === type &&
+            Number(cr.referenceId ?? cr.contractId) === id &&
+            cr.status === 'FAILED'
+    );
+
   const handleDeliveryTransition = async (deliveryId, nextStatus) => {
+    if (nextStatus === 'ACCEPTED' && !isCompliancePassed('DELIVERY_CHECK', deliveryId)) {
+      toast.error('Waiting for compliance approval');
+      return;
+    }
+    if (nextStatus === 'REJECTED' && !isCompliancePassed('DELIVERY_CHECK', deliveryId) && !isComplianceFailed('DELIVERY_CHECK', deliveryId)) {
+      toast.error('Waiting for compliance approval');
+      return;
+    }
+    if (nextStatus === 'REJECTED' && isCompliancePassed('DELIVERY_CHECK', deliveryId)) {
+      toast.error('Waiting for compliance approval');
+      return;
+    }
     setUpdating(p => ({ ...p, [`d-${deliveryId}`]: true }));
     try {
       await updateDeliveryStatus(deliveryId, nextStatus);
@@ -247,13 +284,12 @@ export default function DeliveryTracking() {
     if (!formS.description || formS.description.trim().length < 10) e.description   = 'Description must be at least 10 characters';
     if (!formS.completionDate)                                      e.completionDate = 'Completion date is required';
 
-    // Validate completion date is within contract period
-    if (formS.completionDate && formS.contractId) {
-      const selectedContract = contracts.find(c => String(c.contractId) === String(formS.contractId));
-      if (selectedContract) {
-        if (formS.completionDate < selectedContract.startDate)
-          e.completionDate = `Date cannot be before contract start (${selectedContract.startDate})`;
-        else if (formS.completionDate > selectedContract.endDate)
+    if (formS.completionDate) {
+      if (formS.completionDate < today)
+        e.completionDate = 'Date cannot be before today';
+      else if (formS.contractId) {
+        const selectedContract = contracts.find(c => String(c.contractId) === String(formS.contractId));
+        if (selectedContract && formS.completionDate > selectedContract.endDate)
           e.completionDate = `Date cannot be after contract end (${selectedContract.endDate})`;
       }
     }
@@ -277,6 +313,30 @@ export default function DeliveryTracking() {
   };
 
   const handleServiceTransition = async (serviceId, nextStatus) => {
+    if (nextStatus === 'ACCEPTED' && !isCompliancePassed('SERVICE_CHECK', serviceId)) {
+      toast.error('Waiting for compliance approval');
+      return;
+    }
+    if (nextStatus === 'REJECTED' && isCompliancePassed('SERVICE_CHECK', serviceId)) {
+      toast.error('Compliance check is marked passed, please accept it');
+      return;
+    }
+    if (nextStatus === 'VERIFIED' || nextStatus === 'UNVERIFIED') {
+      const passed = isCompliancePassed('SERVICE_CHECK', serviceId);
+      const failed = isComplianceFailed('SERVICE_CHECK', serviceId);
+      if (!passed && !failed) {
+        toast.error('Waiting for compliance decision');
+        return;
+      }
+      if (passed && nextStatus === 'UNVERIFIED') {
+        toast.error('Compliance is marked passed, please verify the service');
+        return;
+      }
+      if (failed && nextStatus === 'VERIFIED') {
+        toast.error('Compliance is marked rejected, please unverify the service');
+        return;
+      }
+    }
     setUpdating(p => ({ ...p, [`s-${serviceId}`]: true }));
     try {
       await updateServiceStatus(serviceId, nextStatus);
@@ -372,6 +432,13 @@ export default function DeliveryTracking() {
                   ) : filteredDeliveries.map(d => {
                     const cfg      = DELIVERY_STATUS_MAP[d.status] || DELIVERY_STATUS_MAP.PENDING;
                     const progress = deliveryProgress(d.status);
+                    const dPassed  = isCompliancePassed('DELIVERY_CHECK', d.deliveryId);
+                    const dFailed  = isComplianceFailed('DELIVERY_CHECK', d.deliveryId);
+                    const dComplianceLocked = [
+                      ...(!dPassed ? ['ACCEPTED'] : []),
+                      ...(dPassed  ? ['REJECTED'] : []),
+                      ...(!dPassed && !dFailed ? ['REJECTED'] : []),
+                    ];
                     return (
                       <TableRow key={d.deliveryId}>
                         <TableCell className="text-xs font-mono text-blue-600 dark:text-blue-400 font-semibold">#{d.deliveryId}</TableCell>
@@ -402,6 +469,7 @@ export default function DeliveryTracking() {
                             currentStatus={d.status} role={user?.role}
                             onTransition={(_, next) => handleDeliveryTransition(d.deliveryId, next)}
                             loadingKey={updating[`d-${d.deliveryId}`]} itemKey={d.deliveryId}
+                            complianceLockedTransitions={dComplianceLocked}
                           />
                         </TableCell>
                       </TableRow>
@@ -450,8 +518,14 @@ export default function DeliveryTracking() {
                       <TableCell colSpan={8} className="py-10 text-center text-sm text-slate-400">No services found</TableCell>
                     </TableRow>
                   ) : filteredServices.map(s => {
-                    const progress = serviceProgress(s.status);
-                    const cfg      = SERVICE_STATUS_MAP[s.status] || SERVICE_STATUS_MAP.PENDING;
+                    const progress  = serviceProgress(s.status);
+                    const cfg       = SERVICE_STATUS_MAP[s.status] || SERVICE_STATUS_MAP.PENDING;
+                    const sPassed   = isCompliancePassed('SERVICE_CHECK', s.serviceId);
+                    const sFailed   = isComplianceFailed('SERVICE_CHECK', s.serviceId);
+                    const sComplianceLocked = [
+                      ...(!sPassed  ? ['VERIFIED']   : []),
+                      ...(!sFailed  ? ['UNVERIFIED'] : []),
+                    ];
                     return (
                       <TableRow key={s.serviceId}>
                         <TableCell className="text-xs font-mono text-blue-600 dark:text-blue-400 font-semibold">#{s.serviceId}</TableCell>
@@ -472,10 +546,14 @@ export default function DeliveryTracking() {
                         </TableCell>
                         <TableCell>
                           <ActionButtons
-                            transitions={SERVICE_TRANSITIONS} roleRules={SERVICE_ROLE_RULES}
-                            currentStatus={s.status} role={user?.role}
+                            transitions={SERVICE_TRANSITIONS}
+                            roleRules={SERVICE_ROLE_RULES}
+                            currentStatus={s.status}
+                            role={user?.role}
                             onTransition={(_, next) => handleServiceTransition(s.serviceId, next)}
-                            loadingKey={updating[`s-${s.serviceId}`]} itemKey={s.serviceId}
+                            loadingKey={updating[`s-${s.serviceId}`]}
+                            itemKey={s.serviceId}
+                            complianceLockedTransitions={sComplianceLocked}
                           />
                         </TableCell>
                       </TableRow>
@@ -494,7 +572,7 @@ export default function DeliveryTracking() {
         title="Create Delivery">
         <div className="space-y-4">
           <FormSelect label="Contract" required value={formD.contractId}
-            onChange={e => { setFormD(p => ({ ...p, contractId: e.target.value, date: '' })); if (e.target.value) setDErrors(p => ({ ...p, contractId: '', date: '' })); }}
+            onChange={e => { setFormD(p => ({ ...p, contractId: e.target.value, date: today })); if (e.target.value) setDErrors(p => ({ ...p, contractId: '', date: '' })); }}
             error={dErrors.contractId}
             hint={contracts.filter(c => c.status === 'ACTIVE').length === 0 ? 'No active contracts.' : ''}>
             <option value="">Select contract…</option>
@@ -517,16 +595,15 @@ export default function DeliveryTracking() {
             <FormInput label="Unit" value={formD.unit} onChange={setD('unit')} placeholder="tons, kg, pcs…" />
           </div>
 
-          {/* Delivery Date — must be within contract period */}
           {(() => {
             const selectedContract = contracts.find(c => String(c.contractId) === String(formD.contractId));
             return (
               <FormInput label="Delivery Date" required
                 type="date"
-                min={selectedContract?.startDate || undefined}
-                max={selectedContract?.endDate   || today}
+                min={today}
+                max={selectedContract?.endDate || undefined}
                 hint={selectedContract
-                  ? `Must be within contract period: ${selectedContract.startDate} → ${selectedContract.endDate}`
+                  ? `Today → ${selectedContract.endDate}`
                   : 'Select a contract first'}
                 value={formD.date}
                 onChange={e => { setD('date')(e); if (e.target.value) setDErrors(p => ({ ...p, date: '' })); }}
@@ -553,7 +630,7 @@ export default function DeliveryTracking() {
         title="Create Service">
         <div className="space-y-4">
           <FormSelect label="Contract" required value={formS.contractId}
-            onChange={e => { setS('contractId')(e); setSBudgetExceeded(false); setFormS(p => ({ ...p, contractId: e.target.value, completionDate: '' })); if (e.target.value) setSErrors(p => ({ ...p, contractId: '', completionDate: '' })); }}
+            onChange={e => { setS('contractId')(e); setSBudgetExceeded(false); setFormS(p => ({ ...p, contractId: e.target.value, completionDate: today })); if (e.target.value) setSErrors(p => ({ ...p, contractId: '', completionDate: '' })); }}
             error={sErrors.contractId}>
             <option value="">Select contract…</option>
             {contracts.filter(c => c.status === 'ACTIVE').map(c => (
@@ -568,16 +645,15 @@ export default function DeliveryTracking() {
             onChange={e => { setS('description')(e); if (e.target.value.trim().length >= 10) setSErrors(p => ({ ...p, description: '' })); }}
             rows={3} placeholder="Describe the service to be provided…" error={sErrors.description} />
 
-          {/* Completion Date — must be within contract period */}
           {(() => {
             const selectedContract = contracts.find(c => String(c.contractId) === String(formS.contractId));
             return (
               <FormInput label="Expected Completion Date" required
                 type="date"
-                min={selectedContract?.startDate || undefined}
-                max={selectedContract?.endDate   || undefined}
+                min={today}
+                max={selectedContract?.endDate || undefined}
                 hint={selectedContract
-                  ? `Must be within contract period: ${selectedContract.startDate} → ${selectedContract.endDate}`
+                  ? `Today → ${selectedContract.endDate}`
                   : 'Select a contract first'}
                 value={formS.completionDate}
                 onChange={e => { setS('completionDate')(e); if (e.target.value) setSErrors(p => ({ ...p, completionDate: '' })); }}

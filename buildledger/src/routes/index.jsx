@@ -2,6 +2,7 @@ import { createBrowserRouter, Navigate } from 'react-router-dom';
 import AppShell from '../components/layout/AppShell';
 import ProtectedRoute from '../components/auth/ProtectedRoute';
 import Login from '../pages/Login';
+import { useAuth } from '../context/AuthContext';
 import VendorOnboarding from '../pages/VendorOnboarding';
 import VendorReuploadDocuments from '../pages/VendorReuploadDocuments';
 import Unauthorized from '../pages/Unauthorized';
@@ -10,6 +11,7 @@ import VendorManagement from '../pages/VendorManagement';
 import ContractManagement from '../pages/ContractManagement';
 import DeliveryTracking from '../pages/DeliveryTracking';
 import InvoicePayment from '../pages/InvoicePayment';
+import ComplianceDashboard from '../pages/ComplianceDashboard';
 import ComplianceAudit from '../pages/ComplianceAudit';
 import AdminPanel from '../pages/AdminPanel';
 import Notifications from '../pages/Notifications';
@@ -17,6 +19,11 @@ import VendorDashboard from '../pages/VendorDashboard';
 import VendorContracts from '../pages/VendorContracts';
 import ProjectManagement from '../pages/ProjectManagement';
 
+function DashboardRouter() {
+  const { user } = useAuth();
+  if (user?.role === 'COMPLIANCE_OFFICER') return <ComplianceDashboard />;
+  return <Dashboard />;
+}
 export const router = createBrowserRouter([
   // Public routes
   { path: '/login', element: <Login /> },
@@ -38,7 +45,7 @@ export const router = createBrowserRouter([
         index: true,
         element: (
           <ProtectedRoute roles={['ADMIN', 'PROJECT_MANAGER', 'FINANCE_OFFICER', 'COMPLIANCE_OFFICER']}>
-            <Dashboard />
+            <DashboardRouter />
           </ProtectedRoute>
         ),
       },
@@ -109,7 +116,7 @@ export const router = createBrowserRouter([
       {
         path: 'compliance',
         element: (
-          <ProtectedRoute roles={['ADMIN', 'COMPLIANCE_OFFICER', 'PROJECT_MANAGER']}>
+          <ProtectedRoute roles={['ADMIN', 'COMPLIANCE_OFFICER']}>
             <ComplianceAudit />
           </ProtectedRoute>
         ),
