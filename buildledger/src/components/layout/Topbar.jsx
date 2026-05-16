@@ -3,7 +3,7 @@ import { useLocation, useNavigate } from 'react-router-dom';
 import { Bell, Search, ChevronDown, Moon, Sun, LogOut } from 'lucide-react';
 import { useAuth } from '../../context/AuthContext';
 import { useTheme } from '../../context/ThemeContext';
-import { getMyNotifications } from '../../api/notifications';
+import { getMyNotifications, getAdminUnreadCount } from '../../api/notifications';
 
 const pageTitles = {
   '/':                   'Dashboard',
@@ -41,9 +41,14 @@ export default function Topbar({ sidebarWidth }) {
   const refreshUnread = useCallback(async () => {
     if (!user) return;
     try {
-      const res = await getMyNotifications();
-      const list = res.data?.data ?? res.data ?? [];
-      setUnread(Array.isArray(list) ? list.filter(n => !n.delivered).length : 0);
+      if (user?.role === 'ADMIN') {
+        const res = await getAdminUnreadCount();
+        setUnread(typeof res.data === 'number' ? res.data : 0);
+      } else {
+        const res = await getMyNotifications();
+        const list = res.data?.data ?? res.data ?? [];
+        setUnread(Array.isArray(list) ? list.filter(n => !n.read).length : 0);
+      }
     } catch {
       // silently ignore — don't spam console on 4xx/5xx
     }
@@ -51,8 +56,22 @@ export default function Topbar({ sidebarWidth }) {
 
   useEffect(() => {
     refreshUnread();
-    const id = setInterval(refreshUnread, 30000);
-    return () => clearInterval(id);
+    const id = setInterval(refreshUnread, 5000);
+    // Instantly update bell when user marks notification as read on Notifications page
+    // Uses the count passed in the event detail to avoid a stale re-fetch race condition
+    const onReadChange = (e) => {
+      if (e.detail?.count !== undefined) {
+        // Use count from event directly — avoids race condition with backend
+        setUnread(e.detail.count);
+      } else {
+        refreshUnread();
+      }
+    };
+    window.addEventListener('notif-read-change', onReadChange);
+    return () => {
+      clearInterval(id);
+      window.removeEventListener('notif-read-change', onReadChange);
+    };
   }, [refreshUnread]);
 
   const title    = pageTitles[location.pathname] || 'BuildLedger';

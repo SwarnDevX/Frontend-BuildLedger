@@ -232,8 +232,18 @@ export default function AdminPanel() {
       PROJECT_MANAGER: "Project Manager",
       FINANCE_OFFICER: "Finance",
       COMPLIANCE_OFFICER: "Compliance",
-      VENDOR: "Compliance",
+      VENDOR: "Vendor",
     })[role] || role;
+
+  const hasCompliance = users.some((u) => u.role === "COMPLIANCE_OFFICER");
+  const hasFinance = users.some((u) => u.role === "FINANCE_OFFICER");
+  const isSingletonFull = (r) =>
+    (r === "COMPLIANCE_OFFICER" && hasCompliance) ||
+    (r === "FINANCE_OFFICER" && hasFinance);
+
+  // Vendors are managed on the Vendor Management page; hide them here so the
+  // two views never appear to disagree.
+  const visibleUsers = users.filter((u) => u.role !== "VENDOR");
 
   return (
     <div className="animate-fadeIn space-y-5">
@@ -281,7 +291,7 @@ export default function AdminPanel() {
 
       {/* User table */}
       <SectionCard
-        title={`All Users (${users.length})`}
+        title={`All Users (${visibleUsers.length})`}
         actions={
           loading ? (
             <Loader2 size={15} className="text-blue-600 animate-spin" />
@@ -296,7 +306,7 @@ export default function AdminPanel() {
               ))}
             </TableHead>
             <TableBody>
-              {users.map((u) => (
+              {visibleUsers.map((u) => (
                 <TableRow key={u.userId}>
                   <TableCell>
                     <div className="flex items-center gap-2.5">
@@ -336,12 +346,16 @@ export default function AdminPanel() {
                   </TableCell>
                   <TableCell>
                     <div className="flex items-center gap-2">
-                      <button
-                        onClick={() => openEdit(u)}
-                        className="text-slate-400 hover:text-blue-600 dark:hover:text-blue-400 transition-colors p-1 rounded-lg hover:bg-blue-50 dark:hover:bg-blue-900/20"
-                      >
-                        <Edit2 size={13} />
-                      </button>
+                      {u.role !== "COMPLIANCE_OFFICER" &&
+                        u.role !== "FINANCE_OFFICER" && (
+                          <button
+                            onClick={() => openEdit(u)}
+                            className="text-slate-400 hover:text-blue-600 dark:hover:text-blue-400 transition-colors p-1 rounded-lg hover:bg-blue-50 dark:hover:bg-blue-900/20"
+                            title="Edit user"
+                          >
+                            <Edit2 size={13} />
+                          </button>
+                        )}
                       {u.role !== "ADMIN" &&
                         u.role !== "COMPLIANCE_OFFICER" &&
                         u.role !== "FINANCE_OFFICER" && (
@@ -353,11 +367,20 @@ export default function AdminPanel() {
                             <Trash2 size={13} />
                           </button>
                         )}
+                      {(u.role === "COMPLIANCE_OFFICER" ||
+                        u.role === "FINANCE_OFFICER") && (
+                        <span
+                          className="text-[10px] text-slate-400 italic"
+                          title="Singleton role — cannot be edited or deleted"
+                        >
+                          Locked
+                        </span>
+                      )}
                     </div>
                   </TableCell>
                 </TableRow>
               ))}
-              {!loading && users.length === 0 && (
+              {!loading && visibleUsers.length === 0 && (
                 <TableRow>
                   <TableCell
                     colSpan={6}
@@ -439,7 +462,7 @@ export default function AdminPanel() {
           {[
             {
               key: "autoApproval",
-              label: "Auto-Approve Invoices under $10K",
+              label: "Auto-Approve Invoices under ₹10K",
               desc: "Automatically approve small invoices",
             },
             {
@@ -558,20 +581,38 @@ export default function AdminPanel() {
                 Role
               </label>
               <div className="grid grid-cols-2 gap-2">
-                {ROLES.filter((r) => r !== "ADMIN").map((r) => (
-                  <button
-                    key={r}
-                    type="button"
-                    onClick={() => setForm((p) => ({ ...p, role: r }))}
-                    className={`text-xs px-3 py-2.5 rounded-xl font-medium transition-all border ${
-                      form.role === r
-                        ? "bg-blue-600 text-white border-blue-600 shadow-sm shadow-blue-500/20"
-                        : "bg-white/60 text-slate-600 border-slate-200 hover:bg-white dark:bg-slate-800/50 dark:text-slate-300 dark:border-slate-700/40 dark:hover:bg-slate-700/60"
-                    }`}
-                  >
-                    {ROLE_LABELS[r]}
-                  </button>
-                ))}
+                {ROLES.filter((r) => r !== "ADMIN").map((r) => {
+                  const disabled = isSingletonFull(r);
+                  return (
+                    <button
+                      key={r}
+                      type="button"
+                      disabled={disabled}
+                      onClick={() =>
+                        !disabled && setForm((p) => ({ ...p, role: r }))
+                      }
+                      title={
+                        disabled
+                          ? `Only one ${ROLE_LABELS[r]} is allowed in the system`
+                          : undefined
+                      }
+                      className={`text-xs px-3 py-2.5 rounded-xl font-medium transition-all border ${
+                        disabled
+                          ? "bg-slate-100 text-slate-400 border-slate-200 cursor-not-allowed opacity-60 dark:bg-slate-800/30 dark:text-slate-500 dark:border-slate-700/40"
+                          : form.role === r
+                            ? "bg-blue-600 text-white border-blue-600 shadow-sm shadow-blue-500/20"
+                            : "bg-white/60 text-slate-600 border-slate-200 hover:bg-white dark:bg-slate-800/50 dark:text-slate-300 dark:border-slate-700/40 dark:hover:bg-slate-700/60"
+                      }`}
+                    >
+                      {ROLE_LABELS[r]}
+                      {disabled && (
+                        <span className="block text-[9px] mt-0.5 font-normal">
+                          Already exists
+                        </span>
+                      )}
+                    </button>
+                  );
+                })}
               </div>
             </div>
           )}

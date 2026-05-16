@@ -14,6 +14,7 @@ import {
   getAllVendors, deleteVendor, getVendorDocuments,
   uploadVendorDocument, verifyDocument, downloadVendorDocument, updateVendor,
 } from '../../api/vendors';
+import { getContractsByVendor } from '../../api/contracts';
 import { getVendorPageSummary } from '../../api/reports';
 import { useAuth } from '../../context/AuthContext';
 import toast from 'react-hot-toast';
@@ -91,7 +92,7 @@ const extractApiErrorMessage = async (err) => {
 };
 
 function StatusDot({ status }) {
-  const map = { ACTIVE: 'bg-green-500', PENDING: 'bg-amber-500', REJECTED: 'bg-red-500' };
+  const map = { ACTIVE: 'bg-green-500', PENDING: 'bg-amber-500', SUSPENDED: 'bg-red-500' };
   return <span className={`inline-block w-2 h-2 rounded-full ${map[status] || 'bg-slate-300'}`} />;
 }
 
@@ -99,7 +100,7 @@ function DocStatusBadge({ status }) {
   const cfg = {
     PENDING:  'bg-amber-50 dark:bg-amber-900/25 text-amber-700 dark:text-amber-400 border border-amber-200 dark:border-amber-700/40',
     APPROVED: 'bg-green-50 dark:bg-green-900/25 text-green-700 dark:text-green-400 border border-green-200 dark:border-green-700/40',
-    REJECTED: 'bg-red-50 dark:bg-red-900/25 text-red-600 dark:text-red-400 border border-red-200 dark:border-red-700/40',
+    SUSPENDED: 'bg-red-50 dark:bg-red-900/25 text-red-600 dark:text-red-400 border border-red-200 dark:border-red-700/40',
   };
   return (
     <span className={`text-[10px] font-semibold px-2 py-0.5 rounded-full ${cfg[status] || 'bg-slate-100 dark:bg-slate-700/60 text-slate-500 dark:text-slate-400'}`}>
@@ -158,9 +159,8 @@ function VendorProfilePanel({ vendor, onClose, refreshVendors, refreshPending, o
         reviewRemarks: reviewRemarksText || (status === 'APPROVED' ? 'Approved by reviewer' : 'Rejected by reviewer'),
         username: user?.username || user?.name || 'system',
       });
-      const nextVendorStatus = status === 'APPROVED' ? 'ACTIVE' : 'REJECTED';
-      try { await updateVendor(vendor.vendorId, { status: nextVendorStatus }); } catch { /* already set */ }
-      onVendorStatusChange?.(vendor.vendorId, nextVendorStatus);
+      const nextVendorStatus = status === 'APPROVED' ? 'ACTIVE' : 'SUSPENDED';
+onVendorStatusChange?.(vendor.vendorId, nextVendorStatus);
       toast.success(status === 'APPROVED' ? 'Document accepted' : 'Document rejected');
       fetchDocs(); refreshVendors?.(); refreshPending?.();
     } catch { toast.error('Action failed'); }
@@ -392,6 +392,14 @@ export default function VendorManagement() {
   const [selected, setSelected]         = useState(null);
   const [vendorSummary, setVendorSummary] = useState(null);
 
+  // Delete modal state
+  const [deleteTarget, setDeleteTarget]               = useState(null);
+  const [deleteRemarks, setDeleteRemarks]             = useState('');
+  const [deleteChecking, setDeleteChecking]           = useState(false);
+  const [deleteSubmitting, setDeleteSubmitting]       = useState(false);
+  const [deleteAssignedContracts, setDeleteAssignedContracts] = useState([]);
+  const [deleteError, setDeleteError]                 = useState('');
+
   const handleVendorStatusChange = (vendorId, status) => {
     setVendors(prev => prev.map(v => (v.vendorId === vendorId ? { ...v, status } : v)));
     setSelected(prev => (prev?.vendorId === vendorId ? { ...prev, status } : prev));
@@ -423,10 +431,74 @@ export default function VendorManagement() {
     return matchSearch && matchStatus;
   });
 
-  const handleDelete = async (v) => {
-    if (!confirm(`Delete vendor "${v.name}"?`)) return;
-    try { await deleteVendor(v.vendorId); toast.success('Vendor deleted'); fetchVendors(); }
-    catch { toast.error('Delete failed'); }
+  // Fallback status counts derived from the loaded vendor list — used when the
+  // backend report endpoint isn't accessible to this role (e.g., PM gets 403 on
+  // /reports/vendors/summary).
+  const computedStatusCounts = vendors.reduce(
+    (acc, v) => { if (v.status) acc[v.status] = (acc[v.status] || 0) + 1; return acc; },
+    { ACTIVE: 0, PENDING: 0, SUSPENDED: 0 }
+  );
+
+  const openDeleteModal = (v) => {
+    setDeleteTarget(v);
+    setDeleteRemarks('');
+    setDeleteAssignedContracts([]);
+    setDeleteError('');
+  };
+
+  const closeDeleteModal = () => {
+    if (deleteSubmitting) return;
+    setDeleteTarget(null);
+    setDeleteRemarks('');
+    setDeleteAssignedContracts([]);
+    setDeleteError('');
+  };
+
+  // When the modal opens, check whether the vendor is tied to any contracts.
+  useEffect(() => {
+    if (!deleteTarget) return;
+    let cancelled = false;
+    setDeleteChecking(true);
+    getContractsByVendor(deleteTarget.vendorId)
+      .then(res => {
+        if (cancelled) return;
+        const list = res.data?.data || res.data || [];
+        setDeleteAssignedContracts(Array.isArray(list) ? list : []);
+      })
+      .catch(() => { /* pre-check unavailable — fall back to delete-time error */ })
+      .finally(() => { if (!cancelled) setDeleteChecking(false); });
+    return () => { cancelled = true; };
+  }, [deleteTarget]);
+
+  const confirmDelete = async () => {
+    if (!deleteTarget) return;
+    if (!deleteRemarks.trim()) { setDeleteError('Please provide remarks for deletion'); return; }
+    setDeleteSubmitting(true);
+    setDeleteError('');
+    try {
+      await deleteVendor(deleteTarget.vendorId);
+      toast.success(`Vendor "${deleteTarget.name}" deleted. Remarks recorded: ${deleteRemarks.trim()}`);
+      setDeleteTarget(null);
+      setDeleteRemarks('');
+      setDeleteAssignedContracts([]);
+      fetchVendors();
+    } catch (err) {
+      // If the backend blocked the delete, try to enrich the message with the
+      // specific contracts the vendor is tied to.
+      try {
+        const res = await getContractsByVendor(deleteTarget.vendorId);
+        const list = res.data?.data || res.data || [];
+        if (Array.isArray(list) && list.length > 0) {
+          setDeleteAssignedContracts(list);
+          setDeleteError('');
+          return;
+        }
+      } catch { /* ignore — fall back to generic message */ }
+      const apiMessage = err?.response?.data?.message;
+      setDeleteError(apiMessage || 'Delete failed. The vendor may have active records preventing deletion.');
+    } finally {
+      setDeleteSubmitting(false);
+    }
   };
 
   return (
@@ -454,8 +526,8 @@ export default function VendorManagement() {
 
       {/* Status stats */}
       <div className="grid grid-cols-3 gap-3">
-        {['ACTIVE', 'PENDING', 'REJECTED'].map(s => {
-          const count = vendorSummary?.statusCounts?.[s] ?? 0;
+        {['ACTIVE', 'PENDING', 'SUSPENDED'].map(s => {
+          const count = vendorSummary?.statusCounts?.[s] ?? computedStatusCounts[s] ?? 0;
           return (
             <div key={s}
               className={`glass-card p-4 flex items-center gap-3 cursor-pointer transition-all hover:shadow-md
@@ -543,7 +615,7 @@ export default function VendorManagement() {
                             <Eye size={11} /> View
                           </button>
                           {user?.role === 'ADMIN' && (
-                            <button onClick={e => { e.stopPropagation(); handleDelete(v); }}
+                            <button onClick={e => { e.stopPropagation(); openDeleteModal(v); }}
                               className="text-xs text-red-500 dark:text-red-400 hover:underline font-medium">
                               Delete
                             </button>
@@ -573,6 +645,99 @@ export default function VendorManagement() {
           />
         )}
       </div>
+
+      {/* Delete Vendor Modal */}
+      <Modal
+        open={!!deleteTarget}
+        onClose={closeDeleteModal}
+        title={`Delete Vendor: ${deleteTarget?.name || ''}`}
+      >
+        <div className="space-y-4">
+          {deleteChecking && (
+            <div className="flex items-center gap-2 text-xs text-slate-500 dark:text-slate-400">
+              <Loader2 size={13} className="animate-spin text-blue-500" />
+              Checking contract assignments…
+            </div>
+          )}
+
+          {!deleteChecking && deleteAssignedContracts.length > 0 && (
+            <div className="bg-red-50 dark:bg-red-900/20 border border-red-200 dark:border-red-700/40 rounded-xl p-3">
+              <p className="text-xs font-semibold text-red-700 dark:text-red-300 flex items-center gap-1.5">
+                <AlertTriangle size={13} className="shrink-0" />
+                Cannot delete — assigned to {deleteAssignedContracts.length} contract{deleteAssignedContracts.length > 1 ? 's' : ''}
+              </p>
+              <ul className="mt-2 space-y-1 max-h-40 overflow-y-auto">
+                {deleteAssignedContracts.map(c => (
+                  <li key={c.contractId} className="text-[11px] text-red-700 dark:text-red-300 flex items-center gap-1.5">
+                    <span className="font-mono shrink-0">#{c.contractId}</span>
+                    {c.title && <span className="truncate">— {c.title}</span>}
+                    {c.status && (
+                      <span className="ml-auto text-[10px] font-semibold px-1.5 py-0.5 rounded-full bg-red-100 dark:bg-red-900/40 shrink-0">
+                        {c.status}
+                      </span>
+                    )}
+                  </li>
+                ))}
+              </ul>
+              <p className="text-[11px] text-red-600 dark:text-red-300 mt-2">
+                Terminate or reassign these contracts before deleting this vendor.
+              </p>
+            </div>
+          )}
+
+          {!deleteChecking && deleteAssignedContracts.length === 0 && (
+            <>
+              <div className="bg-amber-50 dark:bg-amber-900/20 border border-amber-200 dark:border-amber-700/40 rounded-xl p-3">
+                <p className="text-xs font-semibold text-amber-800 dark:text-amber-200 flex items-center gap-1.5">
+                  <AlertTriangle size={13} className="shrink-0" />
+                  Deletion requires remarks
+                </p>
+                <p className="text-[11px] text-amber-700 dark:text-amber-300 mt-1">
+                  Please provide a reason for deleting this vendor. This action cannot be undone.
+                </p>
+              </div>
+              <div>
+                <label className="text-xs font-semibold text-slate-600 dark:text-slate-300 block mb-2">
+                  Remarks <span className="text-red-500">*</span>
+                </label>
+                <textarea
+                  value={deleteRemarks}
+                  onChange={e => { setDeleteRemarks(e.target.value); if (deleteError) setDeleteError(''); }}
+                  rows={3}
+                  placeholder="e.g., duplicate vendor, no longer operating, fraudulent listing…"
+                  className="w-full rounded-xl border border-slate-200 bg-white px-3 py-2 text-sm text-slate-700 outline-none transition-all focus:border-blue-500 dark:border-slate-700 dark:bg-slate-900 dark:text-slate-200 dark:placeholder-slate-500 resize-none"
+                />
+              </div>
+            </>
+          )}
+
+          {deleteError && (
+            <p className="text-[11px] text-red-600 dark:text-red-400">{deleteError}</p>
+          )}
+
+          <div className="flex gap-2 justify-end pt-2">
+            <Button
+              variant="secondary"
+              size="xs"
+              onClick={closeDeleteModal}
+              disabled={deleteSubmitting}
+            >
+              {deleteAssignedContracts.length > 0 ? 'Close' : 'Cancel'}
+            </Button>
+            {!deleteChecking && deleteAssignedContracts.length === 0 && (
+              <Button
+                variant="primary"
+                size="xs"
+                onClick={confirmDelete}
+                loading={deleteSubmitting}
+                className="bg-red-600! hover:bg-red-700!"
+              >
+                Delete Vendor
+              </Button>
+            )}
+          </div>
+        </div>
+      </Modal>
     </div>
   );
 }

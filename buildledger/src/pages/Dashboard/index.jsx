@@ -5,6 +5,11 @@ import { FileText, Users, Truck, CreditCard, Plus, UserPlus, Clock, AlertTriangl
 import StatCard from '../../components/ui/StatCard';
 import Badge from '../../components/ui/Badge';
 import { getDashboardSummary } from '../../api/reports';
+import { getMyContracts } from '../../api/contracts';
+import { getAllVendors } from '../../api/vendors';
+import { getDeliveriesByContract } from '../../api/deliveries';
+import { getInvoicesByContract } from '../../api/invoices';
+import { useAuth } from '../../context/AuthContext';
 import { useNavigate } from 'react-router-dom';
 import { useTheme } from '../../context/ThemeContext';
 
@@ -15,7 +20,7 @@ const CustomTooltip = ({ active, payload, label }) => {
     return (
       <div className="glass-card px-3 py-2 text-xs shadow-xl">
         <p className="font-semibold text-slate-700 dark:text-slate-200 mb-1">{label}</p>
-        <p className="text-blue-500 font-semibold">${(payload[0].value / 1000000).toFixed(2)}M</p>
+        <p className="text-blue-500 font-semibold">₹{(payload[0].value / 1000000).toFixed(2)}M</p>
       </div>
     );
   }
@@ -25,29 +30,122 @@ const CustomTooltip = ({ active, payload, label }) => {
 const alertIcons  = { warning: AlertTriangle, error: AlertTriangle, info: Clock, success: CheckCircle2 };
 const alertColors = { warning: 'text-amber-500', error: 'text-red-500', info: 'text-blue-500', success: 'text-green-500' };
 
+const MONTHS = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
+
+// Build the dashboard summary client-side for a PROJECT_MANAGER from PM-scoped
+// endpoints. The resulting shape matches what the JSX already reads from
+// `summary?.*`, so no JSX changes are required.
+async function buildPmSummary() {
+  let contracts = [];
+  let vendors = [];
+  const [cRes, vRes] = await Promise.allSettled([getMyContracts(), getAllVendors()]);
+  if (cRes.status === 'fulfilled') contracts = cRes.value.data?.data ?? cRes.value.data ?? [];
+  if (vRes.status === 'fulfilled') vendors   = vRes.value.data?.data ?? vRes.value.data ?? [];
+
+  // Per-contract deliveries + invoices, in parallel
+  const perContract = await Promise.all(contracts.map(async (c) => {
+    const [dRes, iRes] = await Promise.allSettled([
+      getDeliveriesByContract(c.contractId),
+      getInvoicesByContract(c.contractId),
+    ]);
+    const deliveries = dRes.status === 'fulfilled'
+      ? (dRes.value.data?.data ?? dRes.value.data ?? []) : [];
+    const invoices = iRes.status === 'fulfilled'
+      ? (iRes.value.data?.data ?? iRes.value.data ?? []) : [];
+    return { deliveries: Array.isArray(deliveries) ? deliveries : [], invoices: Array.isArray(invoices) ? invoices : [] };
+  }));
+
+  const allDeliveries = perContract.flatMap(x => x.deliveries);
+  const allInvoices   = perContract.flatMap(x => x.invoices);
+
+  const pendingDeliveries = allDeliveries.filter(d => d.status && d.status !== 'DELIVERED').length;
+  const outstandingPayments = allInvoices
+    .filter(i => i.status && i.status !== 'PAID')
+    .reduce((sum, i) => sum + Number(i.amount ?? i.value ?? i.totalAmount ?? 0), 0);
+
+  // Match the Vendor Management page's definition: vendors whose own status is ACTIVE.
+  const activeVendors = vendors.filter(v => v.status === 'ACTIVE').length;
+
+  // Contract value over time — sum by month of startDate for current year
+  const currentYear = new Date().getFullYear();
+  const trend = MONTHS.map(m => ({ month: m, value: 0 }));
+  contracts.forEach(c => {
+    if (!c.startDate) return;
+    const d = new Date(c.startDate);
+    if (d.getFullYear() !== currentYear || Number.isNaN(d.getTime())) return;
+    trend[d.getMonth()].value += Number(c.value ?? c.contractValue ?? 0);
+  });
+
+  // Top vendors by PM contract count — resolve names via the loaded vendor list
+  // when available, falling back to whatever the contract itself carries.
+  const counts = contracts.reduce((acc, c) => {
+    const key = c.vendorId ?? c.vendorName;
+    if (key == null) return acc;
+    acc[key] = (acc[key] || 0) + 1;
+    return acc;
+  }, {});
+  const vendorStatusData = Object.entries(counts)
+    .sort((a, b) => b[1] - a[1])
+    .slice(0, 4)
+    .map(([key, score]) => {
+      const v = vendors.find(x => String(x.vendorId) === String(key));
+      const fallback = contracts.find(c => String(c.vendorId) === String(key))?.vendorName;
+      return { name: v?.name || fallback || `Vendor #${key}`, score };
+    });
+
+  const recentContracts = [...contracts]
+    .sort((a, b) => new Date(b.createdAt || b.startDate || 0) - new Date(a.createdAt || a.startDate || 0))
+    .slice(0, 5);
+
+  return {
+    totalContracts: contracts.length,
+    activeVendors,
+    pendingDeliveries,
+    outstandingPayments,
+    contractTrendData: trend,
+    vendorStatusData,
+    recentContracts,
+    alerts: [],
+  };
+}
+
 export default function Dashboard() {
   const navigate = useNavigate();
   const { isDark } = useTheme();
+  const { user } = useAuth();
   const [summary, setSummary] = useState(null);
   const [loading, setLoading] = useState(true);
 
+  const isPM = user?.role === 'PROJECT_MANAGER';
+  const isFO = user?.role === 'FINANCE_OFFICER';
+
+  // Finance Officer's dashboard IS the Invoices & Payments page
+  useEffect(() => {
+    if (isFO) navigate('/invoices', { replace: true });
+  }, [isFO, navigate]);
+
   const fetchAll = async () => {
+    if (isFO) return;
     setLoading(true);
     try {
-      const res = await getDashboardSummary();
-      setSummary(res.data);
+      if (isPM) {
+        setSummary(await buildPmSummary());
+      } else {
+        const res = await getDashboardSummary();
+        setSummary(res.data);
+      }
     } catch (e) {
       console.error('Dashboard summary failed:', e);
     } finally { setLoading(false); }
   };
 
-  useEffect(() => { fetchAll(); }, []);
+  useEffect(() => { fetchAll(); }, [isPM]);
 
   const kpiData = [
     { label: 'Total Contracts',      value: String(summary?.totalContracts ?? 0),                                         color: '#3b82f6', bg: 'rgba(59,130,246,0.1)'  },
     { label: 'Active Vendors',       value: String(summary?.activeVendors ?? 0),                                          color: '#14B8A6', bg: 'rgba(20,184,166,0.1)'  },
     { label: 'Pending Deliveries',   value: String(summary?.pendingDeliveries ?? 0),                                      color: '#F59E0B', bg: 'rgba(245,158,11,0.1)'  },
-    { label: 'Outstanding Payments', value: `$${((summary?.outstandingPayments ?? 0) / 1000).toFixed(0)}K`,              color: '#EF4444', bg: 'rgba(239,68,68,0.1)'   },
+    { label: 'Outstanding Payments', value: `₹${((summary?.outstandingPayments ?? 0) / 1000).toFixed(0)}K`,              color: '#EF4444', bg: 'rgba(239,68,68,0.1)'   },
   ];
   const kpiIcons = [FileText, Users, Truck, CreditCard];
 
@@ -100,7 +198,7 @@ export default function Dashboard() {
               <CartesianGrid strokeDasharray="3 3" stroke={gridColor} />
               <XAxis dataKey="month" tick={{ fontSize: 11, fill: axisColor }} axisLine={false} tickLine={false} />
               <YAxis tick={{ fontSize: 11, fill: axisColor }} axisLine={false} tickLine={false}
-                tickFormatter={v => v >= 1000000 ? `$${v / 1000000}M` : `$${v / 1000}K`} />
+                tickFormatter={v => v >= 1000000 ? `₹${v / 1000000}M` : `₹${v / 1000}K`} />
               <Tooltip content={<CustomTooltip />} />
               <Area type="monotone" dataKey="value" stroke="#3b82f6" strokeWidth={2.5}
                 fill="url(#blueGrad)" dot={false} activeDot={{ r: 4, fill: '#3b82f6' }} />
@@ -117,26 +215,22 @@ export default function Dashboard() {
           {vendorStatusData.length === 0 ? (
             <div className="flex items-center justify-center h-48 text-slate-400 text-xs">No vendor data</div>
           ) : (
-            <ResponsiveContainer width="100%" height={200}>
-              <BarChart data={vendorStatusData} layout="vertical" margin={{ left: 0 }}>
-                <XAxis type="number" domain={[0, 100]} tick={{ fontSize: 10, fill: axisColor }} axisLine={false} tickLine={false} />
-                <YAxis type="category" dataKey="name" tick={{ fontSize: 10, fill: axisColor }} axisLine={false} tickLine={false} width={70} />
-                <Tooltip
-                  cursor={{ fill: barCursor }}
-                  content={({ active, payload }) => active && payload?.length ? (
-                    <div className="glass-card px-2 py-1.5 text-xs">
-                      <p className="font-semibold text-slate-700 dark:text-slate-200">{payload[0].payload.name}</p>
-                      <p className="text-blue-500">Score: {payload[0].value}</p>
-                    </div>
-                  ) : null}
-                />
-                <Bar dataKey="score" radius={[0, 6, 6, 0]}>
-                  {vendorStatusData.map((e, i) => (
-                    <Cell key={i} fill={COLORS_PERF[i % COLORS_PERF.length]} />
-                  ))}
-                </Bar>
-              </BarChart>
-            </ResponsiveContainer>
+            <ul className="flex flex-col gap-2 max-h-[200px] overflow-y-auto pr-1">
+              {vendorStatusData.map((v, i) => (
+                <li
+                  key={v.name + i}
+                  className="flex items-center gap-2.5 px-3 py-2 rounded-lg bg-slate-50 dark:bg-slate-800/40 border border-slate-100 dark:border-slate-700/40"
+                >
+                  <span
+                    className="w-2 h-2 rounded-full shrink-0"
+                    style={{ background: COLORS_PERF[i % COLORS_PERF.length] }}
+                  />
+                  <span className="text-xs font-medium text-slate-700 dark:text-slate-200 truncate">
+                    {v.name}
+                  </span>
+                </li>
+              ))}
+            </ul>
           )}
         </div>
       </div>
@@ -167,7 +261,7 @@ export default function Dashboard() {
                     <td className="py-2.5 pr-4 text-xs text-slate-700 dark:text-slate-300 font-medium max-w-[140px] truncate">{c.title || c.name || '—'}</td>
                     <td className="py-2.5 pr-4 text-xs text-slate-500 dark:text-slate-400">{c.vendorName || c.vendorId || '—'}</td>
                     <td className="py-2.5 pr-4 text-xs font-semibold text-slate-700 dark:text-slate-300">
-                      {c.value || c.contractValue ? `$${(c.value || c.contractValue).toLocaleString()}` : '—'}
+                      {c.value || c.contractValue ? `₹${(c.value || c.contractValue).toLocaleString()}` : '—'}
                     </td>
                     <td className="py-2.5"><Badge status={c.status} /></td>
                   </tr>

@@ -36,11 +36,14 @@ export default function ContractLifecycleActions({ contract, onStatusChange, can
     actions.push({ label: 'Activate Contract', status: 'ACTIVE', color: '#22C55E', icon: Zap });
   }
 
-  if (contract.status === 'ACTIVE' && isAdmin) {
-    // Only ADMIN can close an active contract
+  if (contract.status === 'ACTIVE') {
+    // ADMIN and PM can complete or terminate (reject) an active contract
     actions.push({ label: 'Mark Completed', status: 'COMPLETED',  color: '#2563EB', icon: CheckCircle2 });
     actions.push({ label: 'Terminate',      status: 'TERMINATED', color: '#EF4444', icon: XCircle      });
-    actions.push({ label: 'Mark Expired',   status: 'EXPIRED',    color: '#94a3b8', icon: Archive      });
+    if (isAdmin) {
+      // Only ADMIN can mark an active contract as expired
+      actions.push({ label: 'Mark Expired', status: 'EXPIRED', color: '#94a3b8', icon: Archive });
+    }
   }
 
   const isTerminal = TERMINAL_STATUSES.includes(contract.status);
@@ -64,7 +67,7 @@ export default function ContractLifecycleActions({ contract, onStatusChange, can
           {contract.status === 'PENDING' && isAdmin  && 'You can activate directly. Alternatively, vendor will accept or reject from their dashboard.'}
           {contract.status === 'PENDING' && !isAdmin && 'Waiting for vendor response. Vendor will accept or reject from their dashboard.'}
           {contract.status === 'ACTIVE'  && isAdmin  && 'ACTIVE → COMPLETED, TERMINATED, or EXPIRED.'}
-          {contract.status === 'ACTIVE'  && !isAdmin && 'Contract is active. Only admin can close this contract.'}
+          {contract.status === 'ACTIVE'  && !isAdmin && 'ACTIVE → COMPLETED or TERMINATED. Only admin can mark as EXPIRED.'}
           {isTerminal && 'This contract is in a terminal state — no further transitions available.'}
         </p>
       </div>

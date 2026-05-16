@@ -4,7 +4,7 @@ export const kpiData = [
   { label: 'Total Contracts', value: '248', change: '+12%', trend: 'up', color: '#2563EB', bg: 'rgba(37,99,235,0.08)' },
   { label: 'Active Vendors', value: '64', change: '+4%', trend: 'up', color: '#14B8A6', bg: 'rgba(20,184,166,0.08)' },
   { label: 'Pending Deliveries', value: '31', change: '-3%', trend: 'down', color: '#F59E0B', bg: 'rgba(245,158,11,0.08)' },
-  { label: 'Outstanding Payments', value: '$1.24M', change: '+8%', trend: 'up', color: '#EF4444', bg: 'rgba(239,68,68,0.08)' },
+  { label: 'Outstanding Payments', value: '₹1.24M', change: '+8%', trend: 'up', color: '#EF4444', bg: 'rgba(239,68,68,0.08)' },
 ];
 
 export const contractTrendData = [
@@ -32,12 +32,12 @@ export const vendorPerformanceData = [
 ];
 
 export const recentContracts = [
-  { id: 'CTR-2401', project: 'Metro Tower Phase 2', vendor: 'SteelCorp Ltd', value: '$480,000', start: '2025-01-15', end: '2025-08-30', status: 'Active' },
-  { id: 'CTR-2402', project: 'Harbor Bridge Repair', vendor: 'ConcretePro Inc', value: '$275,000', start: '2025-02-01', end: '2025-06-15', status: 'Pending' },
-  { id: 'CTR-2403', project: 'City Hall Renovation', vendor: 'ProElec Systems', value: '$192,000', start: '2025-01-20', end: '2025-04-10', status: 'Completed' },
-  { id: 'CTR-2404', project: 'Highway Expansion', vendor: 'BuildMat Co', value: '$1,200,000', start: '2025-03-01', end: '2026-02-28', status: 'Active' },
-  { id: 'CTR-2405', project: 'Stadium Upgrade', vendor: 'SafeGuard Pro', value: '$365,000', start: '2025-02-15', end: '2025-09-30', status: 'On Hold' },
-  { id: 'CTR-2406', project: 'Solar Farm Install', vendor: 'TechBuild Energy', value: '$820,000', start: '2025-04-01', end: '2025-12-31', status: 'Active' },
+  { id: 'CTR-2401', project: 'Metro Tower Phase 2', vendor: 'SteelCorp Ltd', value: '₹480,000', start: '2025-01-15', end: '2025-08-30', status: 'Active' },
+  { id: 'CTR-2402', project: 'Harbor Bridge Repair', vendor: 'ConcretePro Inc', value: '₹275,000', start: '2025-02-01', end: '2025-06-15', status: 'Pending' },
+  { id: 'CTR-2403', project: 'City Hall Renovation', vendor: 'ProElec Systems', value: '₹192,000', start: '2025-01-20', end: '2025-04-10', status: 'Completed' },
+  { id: 'CTR-2404', project: 'Highway Expansion', vendor: 'BuildMat Co', value: '₹1,200,000', start: '2025-03-01', end: '2026-02-28', status: 'Active' },
+  { id: 'CTR-2405', project: 'Stadium Upgrade', vendor: 'SafeGuard Pro', value: '₹365,000', start: '2025-02-15', end: '2025-09-30', status: 'On Hold' },
+  { id: 'CTR-2406', project: 'Solar Farm Install', vendor: 'TechBuild Energy', value: '₹820,000', start: '2025-04-01', end: '2025-12-31', status: 'Active' },
 ];
 
 export const vendors = [
@@ -123,7 +123,7 @@ export const notifications = [
   { id: 3, type: 'Delivery', message: 'DEL-0106 Solar Panels shipped – ETA May 15', time: '2 hr ago', read: false, severity: 'info' },
   { id: 4, type: 'Compliance', message: 'BuildMat Co compliance certificate expired', time: '3 hr ago', read: false, severity: 'error' },
   { id: 5, type: 'Contract', message: 'CTR-2403 City Hall Renovation marked Completed', time: '5 hr ago', read: true, severity: 'success' },
-  { id: 6, type: 'Invoice', message: 'INV-3304 Payment of $72,500 confirmed', time: '1 day ago', read: true, severity: 'success' },
+  { id: 6, type: 'Invoice', message: 'INV-3304 Payment of ₹72,500 confirmed', time: '1 day ago', read: true, severity: 'success' },
   { id: 7, type: 'Delivery', message: 'DEL-0104 Asphalt Mix scheduled for May 3', time: '1 day ago', read: true, severity: 'info' },
   { id: 8, type: 'Compliance', message: 'Quarterly compliance audit scheduled for Apr 30', time: '2 days ago', read: true, severity: 'warning' },
 ];

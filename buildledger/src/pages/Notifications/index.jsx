@@ -17,6 +17,9 @@ import {
   getMyNotifications,
   getAllNotifications,
   markNotificationAsRead,
+  markNotificationAdminRead,
+  markAllNotificationsAdminRead,
+  getAdminUnreadCount,
   getUnreadCount,
 } from "../../api/notifications";
 import { useAuth } from "../../context/AuthContext";
@@ -135,14 +138,19 @@ export default function Notifications() {
     try {
       const [notificationsRes, unreadRes] = await Promise.allSettled([
         isAdmin ? getAllNotifications() : getMyNotifications(),
-        getUnreadCount(),
+        isAdmin ? Promise.resolve({ status: 'fulfilled', value: { data: null } }) : getUnreadCount(),
       ]);
 
-      const notifications =
+      const allNotifications =
         notificationsRes.status === "fulfilled" &&
         Array.isArray(notificationsRes.value.data)
           ? notificationsRes.value.data
           : [];
+
+      // Admin: show only notifications addressed to 'admin' — not other users' personal messages
+      const notifications = isAdmin
+        ? allNotifications.filter((n) => n.recipientEmail === "admin")
+        : allNotifications;
 
       const unreadCountFromApi =
         unreadRes.status === "fulfilled" &&
@@ -159,6 +167,7 @@ export default function Notifications() {
           n.message || n.subject || humanizeType(n.type || "Notification"),
         severity: getSeverity(n.type),
         read: Boolean(n.read),
+        adminRead: Boolean(n.adminRead),
         time: n.createdAt ? new Date(n.createdAt).toLocaleString() : "—",
       }));
 
@@ -178,45 +187,66 @@ export default function Notifications() {
   const filtered = items
     .filter((n) => {
       if (filter === "All") return true;
-      if (filter === "Unread") return !n.read;
+      if (filter === "Unread") return isAdmin ? !n.adminRead : !n.read;
       return n.category === filter;
     })
     .sort((a, b) => {
       const dateA = new Date(a.createdAt || 0).getTime();
       const dateB = new Date(b.createdAt || 0).getTime();
-      return dateB - dateA; // Newest first
+      return dateB - dateA;
     });
 
   const markAllRead = async () => {
-    const unreadItems = items.filter((n) => !n.read);
-    await Promise.all(
-      unreadItems.map((n) => markNotificationAsRead(n.id).catch(() => null)),
-    );
-    setItems((prev) => prev.map((n) => ({ ...n, read: true })));
+    if (isAdmin) {
+      await markAllNotificationsAdminRead().catch(() => null);
+      setItems((prev) => prev.map((n) => ({ ...n, adminRead: true })));
+    } else {
+      const unreadItems = items.filter((n) => !n.read);
+      await Promise.all(
+        unreadItems.map((n) => markNotificationAsRead(n.id).catch(() => null)),
+      );
+      setItems((prev) => prev.map((n) => ({ ...n, read: true })));
+    }
     setBackendUnreadCount(0);
-
-    window.dispatchEvent(new Event("notif-read-change"));
+    window.dispatchEvent(new CustomEvent("notif-read-change", { detail: { count: 0 } }));
   };
 
   const markRead = async (id) => {
     try {
-      await markNotificationAsRead(id);
-      setItems((prev) =>
-        prev.map((n) => (n.id === id ? { ...n, read: true } : n)),
-      );
+      if (isAdmin) {
+        await markNotificationAdminRead(id);
+        setItems((prev) => prev.map((n) => (n.id === id ? { ...n, adminRead: true } : n)));
+        try {
+          const countRes = await getAdminUnreadCount();
+          const remaining = typeof countRes.data === 'number' ? countRes.data : 0;
+          window.dispatchEvent(new CustomEvent("notif-read-change", { detail: { count: remaining } }));
+        } catch {
+          window.dispatchEvent(new CustomEvent("notif-read-change", { detail: { count: 0 } }));
+        }
+      } else {
+        await markNotificationAsRead(id);
+        setItems((prev) => {
+          const updated = prev.map((n) => (n.id === id ? { ...n, read: true } : n));
+          const remaining = updated.filter((n) => !n.read).length;
+          window.dispatchEvent(new CustomEvent("notif-read-change", { detail: { count: remaining } }));
+          return updated;
+        });
+      }
       setBackendUnreadCount((prev) =>
         prev === null ? null : Math.max(prev - 1, 0),
       );
-
-      window.dispatchEvent(new Event("notif-read-change"));
     } catch (error) {
       console.error("Failed to mark as read:", error);
     }
   };
 
-  const unreadCount = items.filter((n) => !n.read).length;
-  const displayUnreadCount =
-    backendUnreadCount != null ? backendUnreadCount : unreadCount;
+  const unreadCount = isAdmin
+    ? items.filter((n) => !n.adminRead).length
+    : items.filter((n) => !n.read).length;
+
+  const displayUnreadCount = isAdmin
+    ? unreadCount
+    : (backendUnreadCount != null ? backendUnreadCount : unreadCount);
 
   return (
     <div className="animate-fadeIn space-y-5 max-w-3xl mx-auto">
@@ -250,7 +280,7 @@ export default function Notifications() {
             f === "All"
               ? items.length
               : f === "Unread"
-                ? items.filter((n) => !n.read).length
+                ? (isAdmin ? items.filter((n) => !n.adminRead).length : items.filter((n) => !n.read).length)
                 : items.filter((n) => n.category === f).length;
           return (
             <button
@@ -291,7 +321,7 @@ export default function Notifications() {
         ].map((type) => {
           const Icon = typeIcons[type] || Bell;
           const count = items.filter(
-            (n) => n.category === type && !n.read,
+            (n) => n.category === type && (isAdmin ? !n.adminRead : !n.read),
           ).length;
           return (
             <div
@@ -342,10 +372,11 @@ export default function Notifications() {
           )}
           {filtered.map((n) => {
             const Icon = typeIcons[n.category] || Bell;
+            const isUnread = isAdmin ? !n.adminRead : !n.read;
             return (
               <div
                 key={n.id}
-                className={`glass-card p-4 flex items-start gap-3 border-l-4 transition-all ${severityBorder[n.severity]} ${!n.read ? "bg-white/80 dark:bg-slate-800/70" : "opacity-70"}`}
+                className={`glass-card p-4 flex items-start gap-3 border-l-4 transition-all ${severityBorder[n.severity]} ${isUnread ? "bg-white/80 dark:bg-slate-800/70" : "opacity-70"}`}
               >
                 <div
                   className="w-9 h-9 rounded-xl flex items-center justify-center shrink-0 mt-0.5"
@@ -356,11 +387,11 @@ export default function Notifications() {
                 <div className="flex-1 min-w-0">
                   <div className="flex items-start justify-between gap-2">
                     <p
-                      className={`text-xs leading-snug ${!n.read ? "text-slate-800 dark:text-slate-100 font-semibold" : "text-slate-600 dark:text-slate-400"}`}
+                      className={`text-xs leading-snug ${isUnread ? "text-slate-800 dark:text-slate-100 font-semibold" : "text-slate-600 dark:text-slate-400"}`}
                     >
                       {n.message}
                     </p>
-                    {!n.read && (
+                    {isUnread && (
                       <button
                         onClick={() => markRead(n.id)}
                         className="shrink-0 w-6 h-6 rounded-lg flex items-center justify-center text-slate-400 hover:bg-slate-100 hover:text-blue-600 dark:hover:bg-slate-700/60 dark:hover:text-blue-400 transition-all"
@@ -378,7 +409,7 @@ export default function Notifications() {
                     >
                       {n.category}
                     </span>
-                    {!n.read && (
+                    {isUnread && (
                       <span className="w-1.5 h-1.5 rounded-full bg-blue-500 animate-pulse" />
                     )}
                   </div>

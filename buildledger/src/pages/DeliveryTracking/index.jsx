@@ -191,9 +191,20 @@ export default function DeliveryTracking() {
       // This fixes the empty dropdown issue for vendors in Create Delivery modal
       const contractFn = user?.role === 'VENDOR' ? getVendorContracts : getAllContracts;
       const [d, s, c, comp] = await Promise.allSettled([getAllDeliveries(), getAllServices(), contractFn(), getAllCompliance()]);
-      setDeliveries(d.status === 'fulfilled' ? (d.value.data?.data || []) : []);
-      setServices(s.status === 'fulfilled'   ? (s.value.data?.data || []) : []);
-      setContracts(c.status === 'fulfilled'  ? (c.value.data?.data || []) : []);
+      const allDeliveries = d.status === 'fulfilled' ? (d.value.data?.data || []) : [];
+      const allServices   = s.status === 'fulfilled' ? (s.value.data?.data || []) : [];
+      const myContracts   = c.status === 'fulfilled' ? (c.value.data?.data || []) : [];
+
+      // VENDOR: show only deliveries/services linked to their own contracts
+      if (user?.role === 'VENDOR') {
+        const myContractIds = new Set(myContracts.map(ct => ct.contractId));
+        setDeliveries(allDeliveries.filter(dl => myContractIds.has(dl.contractId)));
+        setServices(allServices.filter(sv => myContractIds.has(sv.contractId)));
+      } else {
+        setDeliveries(allDeliveries);
+        setServices(allServices);
+      }
+      setContracts(myContracts);
       setComplianceRecords(comp.status === 'fulfilled' ? (comp.value.data?.data || []) : []);
     } catch { toast.error('Failed to load data'); }
     finally { setLoading(false); }

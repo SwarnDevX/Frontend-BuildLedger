@@ -15,7 +15,7 @@ const ALL_NAV = [
   { icon: FileText,         label: 'Contracts',    path: '/contracts',        roles: ['ADMIN','PROJECT_MANAGER'] },
   { icon: Truck,            label: 'Deliveries',   path: '/deliveries',       roles: ['ADMIN','PROJECT_MANAGER','VENDOR'] },
   { icon: CreditCard,       label: 'Invoices',     path: '/invoices',         roles: ['ADMIN','FINANCE_OFFICER','VENDOR'] },
-  { icon: ShieldCheck,      label: 'Compliance',   path: '/compliance',       roles: ['ADMIN','COMPLIANCE_OFFICER','PROJECT_MANAGER'] },
+  { icon: ShieldCheck,      label: 'Compliance',   path: '/compliance',       roles: ['ADMIN','COMPLIANCE_OFFICER'] },
   { icon: Settings,         label: 'Admin',        path: '/admin',            roles: ['ADMIN'] },
   { icon: Bell,             label: 'Notifications',path: '/notifications',    roles: ['ADMIN','PROJECT_MANAGER','FINANCE_OFFICER','COMPLIANCE_OFFICER','VENDOR'] },
 ];
@@ -69,7 +69,7 @@ export default function Sidebar({ collapsed, setCollapsed }) {
 
       {/* Nav */}
       <nav className="flex-1 py-4 overflow-y-auto scrollbar-thin">
-        {navItems.map(({ icon: Icon, label, path }) => (
+        {navItems.map(({ icon: Icon, label, foLabel, path }) => (
           <NavLink
             key={path}
             to={path}
@@ -86,7 +86,7 @@ export default function Sidebar({ collapsed, setCollapsed }) {
               <>
                 <Icon size={18} className="shrink-0" strokeWidth={isActive ? 2.5 : 2} />
                 {!collapsed && (
-                  <span className="text-sm font-medium animate-fadeIn whitespace-nowrap">{label}</span>
+                  <span className="text-sm font-medium animate-fadeIn whitespace-nowrap">{(role === 'FINANCE_OFFICER' && foLabel) ? foLabel : label}</span>
                 )}
               </>
             )}

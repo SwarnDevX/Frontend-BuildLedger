@@ -12,7 +12,7 @@ api.interceptors.request.use((config) => {
   if (!config.headers['Content-Type'] && !(config.data instanceof FormData)) {
     config.headers['Content-Type'] = 'application/json';
   }
-  return config;
+  return config; //we let the browser set it automatically with the correct multipart/form-data boundary string.
 });
 
 // Attach JWT token to every request

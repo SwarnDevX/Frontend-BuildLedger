@@ -11,8 +11,9 @@ import { getAllCompliance, createCompliance, updateComplianceStatus } from '../.
 import { getAllAudits, createAudit, updateAuditStatus, getAuditLogsByComplianceRecord } from '../../api/audits';
 import { getAllUsers } from '../../api/users';
 import { getCompliancePageSummary } from '../../api/reports';
-import { getAllDeliveries } from '../../api/deliveries';
+import { getAllDeliveries, getDeliveryById } from '../../api/deliveries';
 import { getAllServices } from '../../api/services';
+import { getContractById, getContractTerms } from '../../api/contracts';
 import { useAuth } from '../../context/AuthContext';
 import { useTheme } from '../../context/ThemeContext';
 import toast from 'react-hot-toast';
@@ -166,6 +167,10 @@ export default function ComplianceAudit() {
   const [passNotesError,           setPassNotesError]           = useState('');
   const [completeFindingsError,    setCompleteFindingsError]    = useState('');
   const [cancelReasonError,        setCancelReasonError]        = useState('');
+  const [detailDelivery,  setDetailDelivery]  = useState(null);
+  const [detailContract,  setDetailContract]  = useState(null);
+  const [detailTerms,     setDetailTerms]     = useState([]);
+  const [loadingDetails,  setLoadingDetails]  = useState(false);
 
   const canManage = ['ADMIN', 'COMPLIANCE_OFFICER'].includes(user?.role);
   const today = (() => { const d = new Date(); return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`; })();
@@ -216,6 +221,47 @@ export default function ComplianceAudit() {
       .catch(() => setAuditEntries([]))
       .finally(() => setLoadingAudit(false));
   }, [selectedComplianceId]);
+
+  useEffect(() => {
+    const refId = Number(formC.contractId);
+    if (!showCreateC || !refId || !formC.type) {
+      setDetailDelivery(null); setDetailContract(null); setDetailTerms([]);
+      return;
+    }
+    let cancelled = false;
+    setLoadingDetails(true);
+    (async () => {
+      try {
+        let entity = null;
+        let contractId = null;
+        if (formC.type === 'DELIVERY_CHECK') {
+          const res = await getDeliveryById(refId);
+          entity = res.data?.data || res.data || null;
+          contractId = entity?.contractId;
+        } else if (formC.type === 'SERVICE_CHECK') {
+          entity = completedServices.find(s => s.serviceId === refId) || null;
+          contractId = entity?.contractId;
+        }
+        if (cancelled) return;
+        setDetailDelivery(entity);
+        if (contractId) {
+          const [contractRes, termsRes] = await Promise.allSettled([
+            getContractById(contractId),
+            getContractTerms(contractId),
+          ]);
+          if (cancelled) return;
+          const c = contractRes.status === 'fulfilled' ? (contractRes.value.data?.data || contractRes.value.data) : null;
+          const t = termsRes.status === 'fulfilled' ? (termsRes.value.data?.data || termsRes.value.data || []) : [];
+          setDetailContract(c);
+          setDetailTerms(Array.isArray(t) ? t : []);
+        } else {
+          setDetailContract(null); setDetailTerms([]);
+        }
+      } catch { /* silently ignore fetch errors in preview */ }
+      finally { if (!cancelled) setLoadingDetails(false); }
+    })();
+    return () => { cancelled = true; };
+  }, [showCreateC, formC.contractId, formC.type, completedServices]);
 
   const compliant    = complianceSummary?.compliant    ?? 0;
   const nonCompliant = complianceSummary?.nonCompliant ?? 0;
@@ -923,7 +969,7 @@ export default function ComplianceAudit() {
 
       {/* Create Compliance Modal */}
       <Modal open={showCreateC} onClose={closeCreateModal} title="Create Compliance Record">
-        <div className="space-y-4">
+        <div className="space-y-4 max-h-[70vh] overflow-y-auto pr-1">
           <FormSelect
             label="Compliance Type"
             required
@@ -981,6 +1027,78 @@ export default function ComplianceAudit() {
             rows={3}
             placeholder="Min 10 characters — describe the compliance findings…"
           />
+
+          {/* Delivery / Contract detail preview */}
+          {formC.contractId && formC.type && (
+            <div className="rounded-xl border border-slate-200 dark:border-slate-700/50 bg-slate-50/70 dark:bg-slate-800/30 p-3 space-y-3 text-xs max-h-72 overflow-y-auto">
+              {loadingDetails ? (
+                <div className="flex items-center gap-2 text-slate-400">
+                  <Loader2 size={12} className="animate-spin" /> Loading details…
+                </div>
+              ) : (
+                <>
+                  {detailDelivery && (
+                    <div>
+                      <p className="text-[10px] font-bold uppercase tracking-widest text-slate-400 mb-2">
+                        {formC.type === 'SERVICE_CHECK' ? 'Service Details' : 'Delivery Details'}
+                      </p>
+                      <div className="grid grid-cols-[auto_1fr] gap-x-5 gap-y-1">
+                        {formC.type === 'DELIVERY_CHECK' && <>
+                          <span className="text-slate-400">Delivery ID</span><span className="text-slate-700 dark:text-slate-200 font-medium">{detailDelivery.deliveryId ?? '—'}</span>
+                          <span className="text-slate-400">Status</span><span className="text-slate-700 dark:text-slate-200 font-medium">{detailDelivery.status ?? '—'}</span>
+                          <span className="text-slate-400">Item</span><span className="text-slate-700 dark:text-slate-200 font-medium">{detailDelivery.item ?? '—'}</span>
+                          <span className="text-slate-400">Quantity</span><span className="text-slate-700 dark:text-slate-200 font-medium">{detailDelivery.quantity ?? '—'}{detailDelivery.unit ? ` ${detailDelivery.unit}` : ''}</span>
+                          {detailDelivery.price != null && <><span className="text-slate-400">Price</span><span className="text-slate-700 dark:text-slate-200 font-medium">₹{Number(detailDelivery.price).toLocaleString()}</span></>}
+                          {detailDelivery.date && <><span className="text-slate-400">Delivery Date</span><span className="text-slate-700 dark:text-slate-200 font-medium">{new Date(detailDelivery.date).toLocaleDateString()}</span></>}
+                          {detailDelivery.trackingNumber && <><span className="text-slate-400">Tracking #</span><span className="text-slate-700 dark:text-slate-200 font-medium">{detailDelivery.trackingNumber}</span></>}
+                          {detailDelivery.remarks && <><span className="text-slate-400">Remarks</span><span className="text-slate-600 dark:text-slate-300">{detailDelivery.remarks}</span></>}
+                          {detailDelivery.notes && <><span className="text-slate-400">Notes</span><span className="text-slate-600 dark:text-slate-300">{detailDelivery.notes}</span></>}
+                        </>}
+                        {formC.type === 'SERVICE_CHECK' && <>
+                          <span className="text-slate-400">Service ID</span><span className="text-slate-700 dark:text-slate-200 font-medium">{detailDelivery.serviceId ?? '—'}</span>
+                          <span className="text-slate-400">Status</span><span className="text-slate-700 dark:text-slate-200 font-medium">{detailDelivery.status ?? '—'}</span>
+                          {(detailDelivery.name || detailDelivery.serviceName) && <><span className="text-slate-400">Name</span><span className="text-slate-700 dark:text-slate-200 font-medium">{detailDelivery.name || detailDelivery.serviceName}</span></>}
+                          {detailDelivery.completedDate && <><span className="text-slate-400">Completed</span><span className="text-slate-700 dark:text-slate-200 font-medium">{new Date(detailDelivery.completedDate).toLocaleDateString()}</span></>}
+                          {detailDelivery.description && <><span className="text-slate-400">Description</span><span className="text-slate-600 dark:text-slate-300">{detailDelivery.description}</span></>}
+                        </>}
+                      </div>
+                    </div>
+                  )}
+                  {detailContract && (
+                    <div className={detailDelivery ? 'border-t border-slate-200 dark:border-slate-700/50 pt-3' : ''}>
+                      <p className="text-[10px] font-bold uppercase tracking-widest text-slate-400 mb-2">Contract Details</p>
+                      <div className="grid grid-cols-[auto_1fr] gap-x-5 gap-y-1">
+                        <span className="text-slate-400">Contract ID</span><span className="text-slate-700 dark:text-slate-200 font-medium">{detailContract.contractId ?? '—'}</span>
+                        <span className="text-slate-400">Status</span><span className="text-slate-700 dark:text-slate-200 font-medium">{detailContract.status ?? '—'}</span>
+                        {detailContract.title && <><span className="text-slate-400">Title</span><span className="text-slate-700 dark:text-slate-200 font-medium">{detailContract.title}</span></>}
+                        {detailContract.value != null && <><span className="text-slate-400">Value</span><span className="text-slate-700 dark:text-slate-200 font-medium">₹{Number(detailContract.value).toLocaleString()}</span></>}
+                        {detailContract.startDate && <><span className="text-slate-400">Start Date</span><span className="text-slate-700 dark:text-slate-200 font-medium">{new Date(detailContract.startDate).toLocaleDateString()}</span></>}
+                        {detailContract.endDate && <><span className="text-slate-400">End Date</span><span className="text-slate-700 dark:text-slate-200 font-medium">{new Date(detailContract.endDate).toLocaleDateString()}</span></>}
+                        {detailContract.description && <><span className="text-slate-400">Description</span><span className="text-slate-600 dark:text-slate-300">{detailContract.description}</span></>}
+                      </div>
+                    </div>
+                  )}
+                  {detailTerms.length > 0 && (
+                    <div className="border-t border-slate-200 dark:border-slate-700/50 pt-3">
+                      <p className="text-[10px] font-bold uppercase tracking-widest text-slate-400 mb-2">Contract Terms</p>
+                      <div className="space-y-1.5">
+                        {detailTerms.map((term, i) => (
+                          <div key={term.termId ?? i} className="bg-white dark:bg-slate-800/50 rounded-lg px-2.5 py-1.5 border border-slate-100 dark:border-slate-700/40">
+                            <span className="font-semibold text-slate-600 dark:text-slate-300">{term.termType || term.type || `Term ${i + 1}`}:</span>{' '}
+                            <span className="text-slate-500 dark:text-slate-400">{term.description || term.value || term.content || '—'}</span>
+                          </div>
+                        ))}
+                      </div>
+                    </div>
+                  )}
+                  {!loadingDetails && !detailDelivery && !detailContract && (
+                    <p className="text-slate-400 text-[11px]">No details found for this reference ID.</p>
+                  )}
+                </>
+              )}
+            </div>
+          )}
+
           <div className="flex gap-2 justify-end pt-2">
             <Button variant="secondary" size="xs" onClick={closeCreateModal}>Cancel</Button>
             <Button variant="primary" size="xs" onClick={handleCreateCompliance} loading={saving}>Create</Button>

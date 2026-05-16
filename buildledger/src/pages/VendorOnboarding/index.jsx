@@ -387,19 +387,38 @@ export default function VendorRegister() {
   const validate = () => {
     const e = {};
     if (step === 1) {
-      if (!form.name.trim())    e.name     = 'Company name is required';
+      if (!form.name.trim()) {
+        e.name = 'Company name is required';
+      } else if (form.name.trim().length < 3) {
+        e.name = 'Company name must be at least 3 characters';
+      } else if (!/^[A-Za-z\s]+$/.test(form.name.trim())) {
+        e.name = 'Company name should contain only alphabets';
+      }
       if (!form.category)       e.category = 'Please select a category';
       if (!form.address.trim()) e.address  = 'Business address is required';
     }
     if (step === 2) {
-      if (!form.contactInfo.trim()) e.contactInfo = 'Contact person is required';
+      if (!form.contactInfo.trim()) {
+        e.contactInfo = 'Contact person is required';
+      } else if (form.contactInfo.trim().length < 3) {
+        e.contactInfo = 'Contact person name must be at least 3 characters';
+      } else if (!/^[A-Za-z\s]+$/.test(form.contactInfo.trim())) {
+        e.contactInfo = 'Contact person should contain only alphabets';
+      }
       if (!form.email.trim())       e.email       = 'Business email is required';
       else if (!/\S+@\S+\.\S+/.test(form.email)) e.email = 'Enter a valid email address';
       if (!form.phone.trim())       e.phone       = 'Phone number is required';
       else if (!/^[6-9]\d{9}$/.test(form.phone.trim())) e.phone = 'Enter a valid 10-digit mobile number';
     }
     if (step === 3) {
-      if (!form.username.trim()) e.username = 'Username is required';
+      const uname = form.username.trim();
+      if (!uname) {
+        e.username = 'Username is required';
+      } else if (uname.length <= 3) {
+        e.username = 'Username must be more than 3 characters';
+      } else if (!/^[A-Za-z0-9_]+$/.test(uname)) {
+        e.username = 'Only letters, numbers and underscores are allowed';
+      }
       if (!form.password)        e.password = 'Password is required';
       else if (form.password.length < 6) e.password = 'Minimum 6 characters required';
       if (form.password !== form.confirmPassword) e.confirmPassword = 'Passwords do not match';
@@ -455,9 +474,20 @@ export default function VendorRegister() {
   };
 
   const addFiles = (files) => {
+    const incoming = Array.from(files);
+    const isPdf = (f) => f.type === 'application/pdf' || /\.pdf$/i.test(f.name);
+    const accepted = incoming.filter(isPdf);
+    const rejected = incoming.filter(f => !isPdf(f));
+
+    rejected.forEach(f => {
+      toast.error(`Only PDF files are accepted. Got: ${f.name}`);
+    });
+
+    if (accepted.length === 0) return;
+
     setDocuments(p => [
       ...p,
-      ...Array.from(files).map(f => ({ file: f, type: 'PAN_CARD', name: f.name })),
+      ...accepted.map(f => ({ file: f, type: 'PAN_CARD', name: f.name })),
     ]);
   };
 
@@ -617,7 +647,7 @@ export default function VendorRegister() {
           <BrandPanel current={step} />
 
           {/* ── Right form panel ── */}
-          <div className="flex-1 p-7 sm:p-10 flex flex-col justify-center min-h-[580px]">
+          <div className="flex-1 min-w-0 p-7 sm:p-10 flex flex-col justify-center min-h-[580px]">
 
             {/* Top bar: logo on mobile + step counter */}
             <div className="flex items-center justify-between mb-6">
@@ -747,7 +777,7 @@ export default function VendorRegister() {
                     onDragLeave={e => { e.currentTarget.style.borderColor = 'rgba(99,102,246,0.3)'; e.currentTarget.style.background = 'rgba(99,102,246,0.04)'; }}
                     onDrop={e => { e.preventDefault(); addFiles(e.dataTransfer.files); e.currentTarget.style.borderColor = 'rgba(99,102,246,0.3)'; e.currentTarget.style.background = 'rgba(99,102,246,0.04)'; }}
                   >
-                    <input type="file" multiple accept=".pdf,.png,.jpg,.jpeg" className="hidden" onChange={e => addFiles(e.target.files)} />
+                    <input type="file" multiple accept=".pdf" className="hidden" onChange={e => addFiles(e.target.files)} />
                     <div
                       className="w-12 h-12 rounded-2xl flex items-center justify-center"
                       style={{ background: 'rgba(99,102,246,0.12)', border: '1px solid rgba(99,102,246,0.2)' }}
@@ -758,7 +788,7 @@ export default function VendorRegister() {
                       <p className="text-sm text-slate-300 font-medium">
                         Drop files here or <span className="text-indigo-400 underline underline-offset-2">browse</span>
                       </p>
-                      <p className="text-xs text-slate-600 mt-1">PDF, PNG, JPG · Max 10 MB each</p>
+                      <p className="text-xs text-slate-600 mt-1">PDF only · Max 10 MB each</p>
                     </div>
                   </label>
 
@@ -768,11 +798,11 @@ export default function VendorRegister() {
                       {documents.map((d, i) => (
                         <div
                           key={i}
-                          className="flex items-center gap-2.5 p-3 rounded-xl"
+                          className="flex items-center gap-2.5 p-3 rounded-xl min-w-0"
                           style={{ background: 'rgba(16,185,129,0.08)', border: '1px solid rgba(16,185,129,0.2)' }}
                         >
                           <FileText size={12} className="text-emerald-400 shrink-0" />
-                          <p className="text-xs text-slate-300 truncate flex-1">{d.name}</p>
+                          <p className="text-xs text-slate-300 truncate flex-1 min-w-0">{d.name}</p>
                           <select
                             value={d.type}
                             onChange={e => setDocuments(p => p.map((doc, j) => j === i ? { ...doc, type: e.target.value } : doc))}

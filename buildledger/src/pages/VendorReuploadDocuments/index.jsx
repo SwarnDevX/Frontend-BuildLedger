@@ -342,12 +342,12 @@ export default function VendorReuploadDocuments() {
                     const f = e.dataTransfer.files[0];
                     if (f) setSelectedFile(f);
                   }}>
-                  <input ref={fileInputRef} type="file" accept=".pdf,.png,.jpg,.jpeg" className="hidden"
+                  <input ref={fileInputRef} type="file" accept=".pdf" className="hidden"
                     onChange={e => { if (e.target.files[0]) setSelectedFile(e.target.files[0]); }} />
                   <Upload size={22} className="text-blue-400" />
                   <div className="text-center">
                     <p className="text-sm text-slate-300 font-medium">Drop file here or <span className="text-blue-400">browse</span></p>
-                    <p className="text-xs text-slate-600 mt-0.5">PDF, PNG, JPG up to 10 MB</p>
+                    <p className="text-xs text-slate-600 mt-0.5">PDF up to 10 MB</p>
                   </div>
                 </label>
               )}

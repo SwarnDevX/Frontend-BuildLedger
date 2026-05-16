@@ -7,7 +7,7 @@ import {
   getAllContracts, getMyContracts, createContract,
 } from '../../api/contracts';
 import { getAllVendors } from '../../api/vendors';
-import { getAllProjects } from '../../api/projects';
+import { getAllProjects, getMyProjects } from '../../api/projects';
 import { useAuth } from '../../context/AuthContext';
 import toast from 'react-hot-toast';
 
@@ -84,10 +84,11 @@ export default function ContractManagement() {
   const fetchData = useCallback(async () => {
     setLoading(true);
     try {
-      // ADMIN → GET /contracts (all)
-      // PM    → GET /contracts/manager/my (their project contracts only)
+      // ADMIN → GET /contracts (all)         + GET /projects (all)
+      // PM    → GET /contracts/manager/my     + GET /projects/my (assigned only)
       const contractFn = isAdmin ? getAllContracts : getMyContracts;
-      const [c, v, p] = await Promise.allSettled([contractFn(), getAllVendors(), getAllProjects()]);
+      const projectFn  = isAdmin ? getAllProjects  : getMyProjects;
+      const [c, v, p] = await Promise.allSettled([contractFn(), getAllVendors(), projectFn()]);
       setContracts(c.status === 'fulfilled' ? (c.value.data?.data ?? []) : []);
       setVendors(v.status === 'fulfilled'   ? (v.value.data?.data ?? []) : []);
       setProjects(p.status === 'fulfilled'  ? (p.value.data?.data ?? []) : []);
@@ -276,12 +277,6 @@ export default function ContractManagement() {
                   <FormTextarea value={card.description}
                     onChange={e => updateCreateCard(card.id, 'description', e.target.value)}
                     placeholder="Enter term description… (min 3 characters)" rows={2} error={card.error} />
-                  <label className="flex items-center gap-2 text-xs text-slate-500 dark:text-slate-400 cursor-pointer">
-                    <input type="checkbox" checked={card.complianceFlag}
-                      onChange={e => updateCreateCard(card.id, 'complianceFlag', e.target.checked)}
-                      className="accent-amber-500" />
-                    Mark as compliance-required
-                  </label>
                 </div>
               ))}
               <button onClick={addCreateCard}

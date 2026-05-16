@@ -273,7 +273,7 @@ export default function ContractDetailModal({
                 </div>
 
                 <div className="flex gap-2 justify-end pt-1">
-                  {canManage && isDraft && (
+                  {canManage && (isDraft || (!isAdmin && contract.status === 'ACTIVE')) && (
                     <Button variant="secondary" size="xs" icon={<Edit3 size={12} />} onClick={openEdit}>Edit Contract</Button>
                   )}
                   <Button variant="secondary" size="xs" onClick={onClose}>Close</Button>

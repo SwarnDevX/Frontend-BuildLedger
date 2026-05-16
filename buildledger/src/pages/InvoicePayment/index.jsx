@@ -61,7 +61,7 @@ function ApprovalPipeline({ invoices, onApprove, onReject, onPayment, canApprove
                   <div key={inv.invoiceId}
                     className="rounded-xl p-2 mb-1.5 shadow-sm border bg-white/70 dark:bg-slate-800/60 border-white/80 dark:border-slate-700/40">
                     <p className="text-[10px] font-mono text-slate-500 dark:text-slate-500">#{inv.invoiceId}</p>
-                    <p className="text-xs font-semibold text-slate-800 dark:text-slate-100">${(inv.amount || 0).toLocaleString()}</p>
+                    <p className="text-xs font-semibold text-slate-800 dark:text-slate-100">₹{(inv.amount || 0).toLocaleString()}</p>
                     {stage === 'UNDER_REVIEW' && canApprove && (
                       <div className="flex gap-1 mt-1">
                         <button onClick={() => onApprove(inv.invoiceId)}
@@ -116,6 +116,16 @@ export default function InvoicePayment() {
   const canApprove = ['ADMIN', 'FINANCE_OFFICER'].includes(user?.role);
   const canCreate  = ['ADMIN', 'VENDOR'].includes(user?.role);
   const today    = new Date().toISOString().split('T')[0];
+
+  // Calculate max due date = today + 5 business days (skip weekends)
+  const maxDueDate = (() => {
+    let d = new Date(); let count = 0;
+    while (count < 5) {
+      d.setDate(d.getDate() + 1);
+      if (d.getDay() !== 0 && d.getDay() !== 6) count++;
+    }
+    return d.toISOString().split('T')[0];
+  })();
   const tomorrow = new Date(Date.now() + 86400000).toISOString().split('T')[0];
 
   const fetchData = async () => {
@@ -224,10 +234,10 @@ export default function InvoicePayment() {
   const effectiveSummary = vendorLocalSummary ?? invoiceSummary;
 
   const summaryCards = [
-    { label: 'Total Invoiced', value: `$${((effectiveSummary?.totalInvoiced ?? 0) / 1000).toFixed(0)}K`, icon: DollarSign,    color: '#3b82f6', bg: 'rgba(59,130,246,0.1)' },
-    { label: 'Paid',           value: `$${((effectiveSummary?.paid          ?? 0) / 1000).toFixed(0)}K`, icon: CheckCircle2,  color: '#22C55E', bg: 'rgba(34,197,94,0.1)'  },
-    { label: 'Under Review',   value: `$${((effectiveSummary?.underReview   ?? 0) / 1000).toFixed(0)}K`, icon: Clock,         color: '#F59E0B', bg: 'rgba(245,158,11,0.1)' },
-    { label: 'Overdue',        value: `$${((effectiveSummary?.overdue       ?? 0) / 1000).toFixed(0)}K`, icon: AlertTriangle, color: '#EF4444', bg: 'rgba(239,68,68,0.1)'  },
+    { label: 'Total Invoiced', value: `₹${((effectiveSummary?.totalInvoiced ?? 0) / 1000).toFixed(0)}K`, icon: DollarSign,    color: '#3b82f6', bg: 'rgba(59,130,246,0.1)' },
+    { label: 'Paid',           value: `₹${((effectiveSummary?.paid          ?? 0) / 1000).toFixed(0)}K`, icon: CheckCircle2,  color: '#22C55E', bg: 'rgba(34,197,94,0.1)'  },
+    { label: 'Under Review',   value: `₹${((effectiveSummary?.underReview   ?? 0) / 1000).toFixed(0)}K`, icon: Clock,         color: '#F59E0B', bg: 'rgba(245,158,11,0.1)' },
+    { label: 'Overdue',        value: `₹${((effectiveSummary?.overdue       ?? 0) / 1000).toFixed(0)}K`, icon: AlertTriangle, color: '#EF4444', bg: 'rgba(239,68,68,0.1)'  },
   ];
 
   const axisColor = isDark ? '#8aa4b6' : '#94a3b8';
@@ -281,12 +291,12 @@ export default function InvoicePayment() {
               <BarChart data={trendData}>
                 <CartesianGrid strokeDasharray="3 3" stroke={gridColor} />
                 <XAxis dataKey="month" tick={{ fontSize: 11, fill: axisColor }} axisLine={false} tickLine={false} />
-                <YAxis tick={{ fontSize: 11, fill: axisColor }} axisLine={false} tickLine={false} tickFormatter={v => `$${v/1000}K`} />
+                <YAxis tick={{ fontSize: 11, fill: axisColor }} axisLine={false} tickLine={false} tickFormatter={v => `₹${v/1000}K`} />
                 <Tooltip content={({ active, payload, label }) => active && payload?.length ? (
                   <div className="glass-card px-3 py-2 text-xs shadow-lg">
                     <p className="font-semibold text-slate-700 dark:text-slate-200 mb-1">{label}</p>
-                    <p className="text-green-500">Completed: ${(payload[0]?.value || 0).toLocaleString()}</p>
-                    <p className="text-amber-500">Pending: ${(payload[1]?.value || 0).toLocaleString()}</p>
+                    <p className="text-green-500">Completed: ₹{(payload[0]?.value || 0).toLocaleString()}</p>
+                    <p className="text-amber-500">Pending: ₹{(payload[1]?.value || 0).toLocaleString()}</p>
                   </div>
                 ) : null} />
                 <Bar dataKey="paid"    fill="#22C55E" radius={[4,4,0,0]} />
@@ -321,7 +331,7 @@ export default function InvoicePayment() {
                 <TableRow key={inv.invoiceId}>
                   <TableCell className="text-xs font-mono text-blue-600 dark:text-blue-400 font-semibold">#{inv.invoiceId}</TableCell>
                   <TableCell className="text-xs text-slate-400">{contractLabel(contracts, inv.contractId)}</TableCell>
-                  <TableCell className="text-xs font-bold text-slate-800 dark:text-slate-100">${(inv.amount || 0).toLocaleString()}</TableCell>
+                  <TableCell className="text-xs font-bold text-slate-800 dark:text-slate-100">₹{(inv.amount || 0).toLocaleString()}</TableCell>
                   <TableCell className="text-xs text-slate-500 dark:text-slate-400">{inv.date || '—'}</TableCell>
                   <TableCell className="text-xs text-slate-500 dark:text-slate-400">{inv.dueDate || '—'}</TableCell>
                   <TableCell><Badge status={inv.status} /></TableCell>
@@ -363,6 +373,7 @@ export default function InvoicePayment() {
                 ...p,
                 contractId: id,
                 amount: selected?.value ? String(selected.value) : p.amount,
+                date: p.date || today,
               }));
               if (id) setIErrors(p => ({ ...p, contractId: '', amount: '' }));
             }}
@@ -384,9 +395,11 @@ export default function InvoicePayment() {
             min="0.01"
             step="0.01"
             value={formI.amount}
-            onChange={e => { setI('amount')(e); if (e.target.value) setIErrors(p => ({ ...p, amount: '' })); }}
-            placeholder="0.00"
+            onChange={() => {}}
+            readOnly
+            placeholder="Select a contract to auto-fill"
             error={iErrors.amount}
+            hint="Auto-filled from contract value — cannot be changed"
           />
           <div className="grid grid-cols-2 gap-3">
             <FormInput
@@ -394,7 +407,7 @@ export default function InvoicePayment() {
               required
               type="date"
               max={today}
-              value={formI.date}
+              value={formI.date || today}
               onChange={e => { setI('date')(e); if (e.target.value) setIErrors(p => ({ ...p, date: '' })); }}
               error={iErrors.date}
             />
@@ -402,10 +415,12 @@ export default function InvoicePayment() {
               label="Due Date"
               required
               type="date"
-              min={tomorrow}
+              min={today}
+              max={maxDueDate}
               value={formI.dueDate}
               onChange={e => { setI('dueDate')(e); if (e.target.value) setIErrors(p => ({ ...p, dueDate: '' })); }}
               error={iErrors.dueDate}
+              hint="Max 5 business days from today"
             />
           </div>
           <FormTextarea label="Description" value={formI.description} onChange={setI('description')} rows={2} placeholder="Optional description…" />
@@ -451,11 +466,11 @@ export default function InvoicePayment() {
           {selectedInvoice && (
             <div className="p-3 rounded-xl" style={{ background: 'rgba(20,184,166,0.06)', border: '1px solid rgba(20,184,166,0.15)' }}>
               <p className="text-xs text-slate-500 dark:text-slate-400 font-semibold mb-1 uppercase tracking-wide">Invoice Amount</p>
-              <p className="text-xl font-bold text-teal-600 dark:text-teal-400">${(selectedInvoice.amount || 0).toLocaleString()}</p>
+              <p className="text-xl font-bold text-teal-600 dark:text-teal-400">₹{(selectedInvoice.amount || 0).toLocaleString()}</p>
             </div>
           )}
           <FormInput
-            label="Amount ($)"
+            label="Amount (₹)"
             required
             type="number"
             min="0.01"
