@@ -1,0 +1,162 @@
+/* ── Layout ── */
+.wrap {
+  max-width: 1200px;
+  margin: 0 auto;
+  padding: 0 48px;
+  width: 100%;
+  box-sizing: border-box;
+}
+
+/* ── Typography ── */
+.display-xl {
+  font-family: Inter, sans-serif;
+  font-weight: 800;
+  letter-spacing: -1.5px;
+}
+
+.display-lg {
+  font-family: Inter, sans-serif;
+  font-size: clamp(32px, 4vw, 52px);
+  font-weight: 800;
+  letter-spacing: -1px;
+  line-height: 1.1;
+}
+
+.label-sm {
+  font-family: Inter, sans-serif;
+  font-size: 11.5px;
+  font-weight: 700;
+  letter-spacing: 0.12em;
+  text-transform: uppercase;
+}
+
+/* ── Divider bar ── */
+.divider-bar {
+  width: 48px;
+  height: 3px;
+  border-radius: 99px;
+  background: linear-gradient(90deg, #0ea5e9, #38bdf8);
+  margin: 0 auto;
+}
+
+/* ── Buttons ── */
+.btn {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  border: none;
+  cursor: pointer;
+  font-family: Inter, sans-serif;
+  font-weight: 700;
+  transition: all 0.25s cubic-bezier(0.16, 1, 0.3, 1);
+  text-decoration: none;
+}
+
+.btn-blue {
+  background: linear-gradient(135deg, #0ea5e9, #0284c7);
+  color: #fff;
+  box-shadow: 0 4px 16px rgba(14, 165, 233, 0.4);
+  border-radius: 8px;
+  padding: 11px 24px;
+  font-size: 14px;
+}
+
+.btn-lg {
+  padding: 15px 36px;
+  font-size: 15.5px;
+  border-radius: 10px;
+}
+
+/* ── Responsive ── */
+.hide-mobile {
+  display: flex;
+}
+
+@media (max-width: 768px) {
+  .hide-mobile {
+    display: none;
+  }
+  .wrap {
+    padding: 0 20px;
+  }
+}
+
+/* ── Keyframes ── */
+
+/* Eyebrow pill entrance */
+@keyframes a0 {
+  from { opacity: 0; transform: translateY(-14px); }
+  to   { opacity: 1; transform: none; }
+}
+
+/* Hero headline entrance */
+@keyframes a1 {
+  from { opacity: 0; transform: translateY(22px); }
+  to   { opacity: 1; transform: none; }
+}
+
+/* Hero subtext */
+@keyframes a2 {
+  from { opacity: 0; transform: translateY(18px); }
+  to   { opacity: 1; transform: none; }
+}
+
+/* CTA buttons */
+@keyframes a3 {
+  from { opacity: 0; transform: translateY(14px); }
+  to   { opacity: 1; transform: none; }
+}
+
+/* Trust strip */
+@keyframes a4 {
+  from { opacity: 0; }
+  to   { opacity: 1; }
+}
+
+/* Stats bar */
+@keyframes a5 {
+  from { opacity: 0; transform: translateY(20px); }
+  to   { opacity: 1; transform: none; }
+}
+
+/* Client ticker */
+@keyframes ticker {
+  from { transform: translateX(0); }
+  to   { transform: translateX(-50%); }
+}
+
+/* Pulsing dot */
+@keyframes pulse {
+  0%, 100% { opacity: 1; transform: scale(1); }
+  50%       { opacity: 0.55; transform: scale(1.15); }
+}
+
+/* Gradient text shimmer */
+@keyframes shimmer {
+  from { background-position: 200% center; }
+  to   { background-position: -200% center; }
+}
+
+/* List item fade-up */
+@keyframes fadeUp {
+  from { opacity: 0; transform: translateY(12px); }
+  to   { opacity: 1; transform: none; }
+}
+
+/* Border color pulse */
+@keyframes borderPulse {
+  0%, 100% { border-color: rgba(14, 165, 233, 0.35); }
+  50%       { border-color: rgba(14, 165, 233, 0.75); }
+}
+
+/* Progress bar grow */
+@keyframes lineGrow {
+  from { transform: scaleX(0); transform-origin: left; }
+  to   { transform: scaleX(1); transform-origin: left; }
+}
+
+/* Floating glow */
+@keyframes float {
+  0%, 100% { transform: translate(-50%, -50%) translateY(0); }
+  50%       { transform: translate(-50%, -50%) translateY(-18px); }
+}

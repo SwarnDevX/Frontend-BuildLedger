@@ -11,10 +11,11 @@ import { getAllProjects, getMyProjects } from '../../api/projects';
 import { useAuth } from '../../context/AuthContext';
 import toast from 'react-hot-toast';
 
-import ContractCard from './ContractCard';
-import ContractDetailModal from './ContractDetailModal';
-import BudgetBreakdown from './BudgetBreakdown';
-import { STATUS_OPTIONS, TERMINAL_STATUSES, EMPTY_FORM, validateTermCard, newCard, formatINR } from './contractConstants';
+import ContractCard from '../../components/contracts/ContractCard';
+import ContractDetailModal from '../../components/contracts/ContractDetailModal';
+import BudgetBreakdown from '../../components/contracts/BudgetBreakdown';
+import { STATUS_OPTIONS, TERMINAL_STATUSES, EMPTY_FORM, validateTermCard, newCard } from '../../constants/contractConstants';
+import { formatINR } from '../../utils/format';
 
 /**
  * ContractManagement — main page.

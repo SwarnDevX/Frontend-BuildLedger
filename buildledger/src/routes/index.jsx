@@ -6,6 +6,7 @@ import { useAuth } from '../context/AuthContext';
 import VendorOnboarding from '../pages/VendorOnboarding';
 import VendorReuploadDocuments from '../pages/VendorReuploadDocuments';
 import Unauthorized from '../pages/Unauthorized';
+import Landing from '../pages/Landing';
 import Dashboard from '../pages/Dashboard';
 import VendorManagement from '../pages/VendorManagement';
 import ContractManagement from '../pages/ContractManagement';
@@ -26,6 +27,7 @@ function DashboardRouter() {
 }
 export const router = createBrowserRouter([
   // Public routes
+  { path: '/landing', element: <Landing /> },
   { path: '/login', element: <Login /> },
   { path: '/vendor/register', element: <VendorOnboarding /> },
   { path: '/vendor/reupload-documents', element: <VendorReuploadDocuments /> },

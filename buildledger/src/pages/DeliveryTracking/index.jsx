@@ -266,16 +266,16 @@ export default function DeliveryTracking() {
     );
 
   const handleDeliveryTransition = async (deliveryId, nextStatus) => {
-    if (nextStatus === 'ACCEPTED' && !isCompliancePassed('DELIVERY_CHECK', deliveryId)) {
-      toast.error('Waiting for compliance approval');
+    const passed = isCompliancePassed('DELIVERY_CHECK', deliveryId);
+    const failed = isComplianceFailed('DELIVERY_CHECK', deliveryId);
+    if (nextStatus === 'ACCEPTED' && !passed) {
+      toast.error('Compliance check must pass before accepting this delivery');
       return;
     }
-    if (nextStatus === 'REJECTED' && !isCompliancePassed('DELIVERY_CHECK', deliveryId) && !isComplianceFailed('DELIVERY_CHECK', deliveryId)) {
-      toast.error('Waiting for compliance approval');
-      return;
-    }
-    if (nextStatus === 'REJECTED' && isCompliancePassed('DELIVERY_CHECK', deliveryId)) {
-      toast.error('Waiting for compliance approval');
+    // REJECTED is only blocked while compliance decision is still pending
+    // Once compliance is PASSED or FAILED, the human can reject for any reason
+    if (nextStatus === 'REJECTED' && !passed && !failed) {
+      toast.error('Waiting for a compliance decision before rejecting');
       return;
     }
     setUpdating(p => ({ ...p, [`d-${deliveryId}`]: true }));
@@ -324,29 +324,20 @@ export default function DeliveryTracking() {
   };
 
   const handleServiceTransition = async (serviceId, nextStatus) => {
-    if (nextStatus === 'ACCEPTED' && !isCompliancePassed('SERVICE_CHECK', serviceId)) {
-      toast.error('Waiting for compliance approval');
-      return;
-    }
-    if (nextStatus === 'REJECTED' && isCompliancePassed('SERVICE_CHECK', serviceId)) {
-      toast.error('Compliance check is marked passed, please accept it');
-      return;
-    }
     if (nextStatus === 'VERIFIED' || nextStatus === 'UNVERIFIED') {
       const passed = isCompliancePassed('SERVICE_CHECK', serviceId);
       const failed = isComplianceFailed('SERVICE_CHECK', serviceId);
+      // Both buttons locked until compliance makes a decision
       if (!passed && !failed) {
-        toast.error('Waiting for compliance decision');
+        toast.error('Waiting for a compliance decision before acting on this service');
         return;
       }
-      if (passed && nextStatus === 'UNVERIFIED') {
-        toast.error('Compliance is marked passed, please verify the service');
-        return;
-      }
+      // Compliance FAILED → only UNVERIFIED allowed
       if (failed && nextStatus === 'VERIFIED') {
-        toast.error('Compliance is marked rejected, please unverify the service');
+        toast.error('Compliance failed — this service cannot be verified');
         return;
       }
+      // Compliance PASSED → both VERIFIED and UNVERIFIED are allowed (human makes final call)
     }
     setUpdating(p => ({ ...p, [`s-${serviceId}`]: true }));
     try {
@@ -446,9 +437,10 @@ export default function DeliveryTracking() {
                     const dPassed  = isCompliancePassed('DELIVERY_CHECK', d.deliveryId);
                     const dFailed  = isComplianceFailed('DELIVERY_CHECK', d.deliveryId);
                     const dComplianceLocked = [
-                      ...(!dPassed ? ['ACCEPTED'] : []),
-                      ...(dPassed  ? ['REJECTED'] : []),
-                      ...(!dPassed && !dFailed ? ['REJECTED'] : []),
+                      ...(!dPassed              ? ['ACCEPTED'] : []), // locked until compliance passes
+                      ...(!dPassed && !dFailed  ? ['REJECTED'] : []), // locked only while pending
+                      // compliance PASSED → both unlocked (human decides)
+                      // compliance FAILED → only REJECTED unlocked
                     ];
                     return (
                       <TableRow key={d.deliveryId}>
@@ -534,8 +526,10 @@ export default function DeliveryTracking() {
                     const sPassed   = isCompliancePassed('SERVICE_CHECK', s.serviceId);
                     const sFailed   = isComplianceFailed('SERVICE_CHECK', s.serviceId);
                     const sComplianceLocked = [
-                      ...(!sPassed  ? ['VERIFIED']   : []),
-                      ...(!sFailed  ? ['UNVERIFIED'] : []),
+                      ...(!sPassed             ? ['VERIFIED']   : []), // locked until compliance passes
+                      ...(!sPassed && !sFailed ? ['UNVERIFIED'] : []), // locked only while pending
+                      // compliance PASSED → both unlocked (human decides)
+                      // compliance FAILED → only UNVERIFIED unlocked
                     ];
                     return (
                       <TableRow key={s.serviceId}>

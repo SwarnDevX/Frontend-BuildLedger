@@ -364,7 +364,7 @@ export default function InvoicePayment() {
           <FormSelect
             label="Contract"
             required
-            hint={isVendor ? '(must be COMPLETED)' : '(must be ACTIVE)'}
+            hint="(must be ACTIVE)"
             value={formI.contractId}
             onChange={e => {
               const id = e.target.value;
@@ -381,7 +381,7 @@ export default function InvoicePayment() {
           >
             <option value="">Select contract…</option>
             {contracts
-              .filter(c => isVendor ? c.status === 'COMPLETED' : c.status === 'ACTIVE')
+              .filter(c => c.status === 'ACTIVE')
               .map(c => (
                 <option key={c.contractId} value={c.contractId}>
                   {c.vendorName || 'Unknown'} — {c.projectName || 'Unknown'} (#{c.contractId})

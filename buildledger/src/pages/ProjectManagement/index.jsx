@@ -11,9 +11,9 @@ import { getUserByRole } from '../../api/users';
 import { useAuth } from '../../context/AuthContext';
 import toast from 'react-hot-toast';
 
-import ProjectCard from './ProjectCard';
-import ProjectDetailModal from './ProjectDetailModal';
-import { STATUS_OPTIONS, TERMINAL_PROJECT, EMPTY_FORM } from './projectConstants';
+import ProjectCard from '../../components/projects/ProjectCard';
+import ProjectDetailModal from '../../components/projects/ProjectDetailModal';
+import { STATUS_OPTIONS, TERMINAL_PROJECT, EMPTY_FORM } from '../../constants/projectConstants';
 
 // Today's date in YYYY-MM-DD — used as min for date inputs to blur past dates
 const TODAY = new Date().toISOString().split('T')[0];

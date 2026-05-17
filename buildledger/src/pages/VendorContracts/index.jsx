@@ -6,9 +6,9 @@ import {
 import { getVendorContracts, vendorRespondToContract } from '../../api/contracts';
 import { useAuth } from '../../context/AuthContext';
 import toast from 'react-hot-toast';
-import ContractCard from '../ContractManagement/ContractCard';
-import ContractDetailModal from '../ContractManagement/ContractDetailModal';
-import { STATUS_OPTIONS } from '../ContractManagement/contractConstants';
+import ContractCard from '../../components/contracts/ContractCard';
+import ContractDetailModal from '../../components/contracts/ContractDetailModal';
+import { STATUS_OPTIONS } from '../../constants/contractConstants';
 
 export default function VendorContracts() {
   const { user } = useAuth();
