@@ -43,7 +43,7 @@ function ApprovalPipeline({ invoices, onApprove, onReject, onPayment, canApprove
   return (
     <div className="glass-card p-5">
       <h3 className="text-sm font-semibold text-slate-700 dark:text-slate-200 mb-4">Approval Workflow</h3>
-      <div className="flex items-start gap-2">
+      <div className="flex items-start gap-2 overflow-x-auto pb-1">
         {approvalStages.map((stage, i) => {
           const items = invoices.filter(inv => inv.status === stage);
           return (
@@ -401,7 +401,7 @@ export default function InvoicePayment() {
             error={iErrors.amount}
             hint="Auto-filled from contract value — cannot be changed"
           />
-          <div className="grid grid-cols-2 gap-3">
+          <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
             <FormInput
               label="Invoice Date"
               required

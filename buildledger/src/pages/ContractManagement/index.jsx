@@ -205,8 +205,8 @@ export default function ContractManagement() {
             Add terms below, then submit for vendor review.
           </InfoBox>
 
-          <div className="grid grid-cols-2 gap-3">
-            <div className="col-span-2">
+          <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+            <div className="col-span-1 sm:col-span-2">
               <FormSelect label="Vendor" required value={form.vendorId}
                 onChange={e => { set('vendorId')(e); if (e.target.value) setFormErrors(p => ({ ...p, vendorId: '' })); }}
                 error={formErrors.vendorId || (activeVendors.length === 0 ? 'No active vendors.' : '')}>
@@ -214,7 +214,7 @@ export default function ContractManagement() {
                 {activeVendors.map(v => <option key={v.vendorId} value={v.vendorId}>{v.name} (#{v.vendorId})</option>)}
               </FormSelect>
             </div>
-            <div className="col-span-2">
+            <div className="col-span-1 sm:col-span-2">
               <FormSelect label="Project" required value={form.projectId}
                 onChange={e => {
                   set('projectId')(e);
@@ -227,7 +227,7 @@ export default function ContractManagement() {
                 ))}
               </FormSelect>
             </div>
-            <div className="col-span-2">
+            <div className="col-span-1 sm:col-span-2">
               <FormInput label="Contract Value (₹)" required type="number" min="0.01" step="0.01"
                 value={form.value}
                 onChange={e => { set('value')(e); if (e.target.value) setFormErrors(p => ({ ...p, value: '' })); }}
@@ -252,7 +252,7 @@ export default function ContractManagement() {
               min={form.startDate || createSelectedProject?.startDate} max={createSelectedProject?.endDate}
               onChange={e => { set('endDate')(e); if (e.target.value) setFormErrors(p => ({ ...p, endDate: '' })); }}
               error={formErrors.endDate} />
-            <div className="col-span-2">
+            <div className="col-span-1 sm:col-span-2">
               <FormTextarea label="Description" value={form.description} onChange={set('description')}
                 rows={2} placeholder="Optional description…" />
             </div>

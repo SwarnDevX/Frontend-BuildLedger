@@ -273,7 +273,7 @@ export default function AdminPanel() {
       />
 
       {/* Quick role stats */}
-      <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
+      <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
         {ROLES.map((r) => {
           const count = users.filter((u) => u.role === r).length;
           return (

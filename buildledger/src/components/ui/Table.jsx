@@ -23,7 +23,9 @@ export function Table({ children, className = '', elevated = true }) {
   if (!elevated) return table;
   return (
     <div className={`glass-card overflow-hidden ${className}`}>
-      {table}
+      <div className="overflow-x-auto">
+        {table}
+      </div>
     </div>
   );
 }

@@ -307,50 +307,7 @@ export default function Notifications() {
         })}
       </div>
 
-      <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
-        {[
-          "Contract",
-          "Delivery",
-          "Invoice",
-          "Compliance",
-          "Vendor",
-          "Payment",
-          "Audit",
-          "IAM",
-          "Service",
-        ].map((type) => {
-          const Icon = typeIcons[type] || Bell;
-          const count = items.filter(
-            (n) => n.category === type && (isAdmin ? !n.adminRead : !n.read),
-          ).length;
-          return (
-            <div
-              key={type}
-              className="glass-card p-4 flex items-center gap-3 cursor-pointer"
-              onClick={() => setFilter(type)}
-            >
-              <div
-                className="w-9 h-9 rounded-xl flex items-center justify-center shrink-0"
-                style={{ background: typeBg[type] }}
-              >
-                <Icon size={16} style={{ color: typeColors[type] }} />
-              </div>
-              <div>
-                <p className="text-xs font-semibold text-slate-700 dark:text-slate-300">
-                  {type}
-                </p>
-                {count > 0 ? (
-                  <p className="text-[10px] text-red-500 dark:text-red-400 font-semibold">
-                    {count} unread
-                  </p>
-                ) : (
-                  <p className="text-[10px] text-slate-400">All clear</p>
-                )}
-              </div>
-            </div>
-          );
-        })}
-      </div>
+      
 
       {loading ? (
         <div className="flex items-center justify-center py-12 gap-2 text-slate-400">

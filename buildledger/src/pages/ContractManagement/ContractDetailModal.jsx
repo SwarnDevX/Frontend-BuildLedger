@@ -225,7 +225,7 @@ export default function ContractDetailModal({
             {!editing ? (
               <>
                 {/* Info grid */}
-                <div className="grid grid-cols-2 gap-4">
+                <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
                   {[
                     ['Vendor',     contract.vendorName  || `Vendor #${contract.vendorId}`],
                     ['Project',    contract.projectName || `Project #${contract.projectId}`],
@@ -282,7 +282,7 @@ export default function ContractDetailModal({
             ) : (
               /* Edit form — DRAFT only */
               <div className="space-y-4">
-                <div className="grid grid-cols-2 gap-3">
+                <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
                   <FormSelect label="Vendor" required value={editForm.vendorId} onChange={setF('vendorId')} error={editErrors.vendorId}>
                     <option value="">Select vendor…</option>
                     {activeVendors.map(v => <option key={v.vendorId} value={v.vendorId}>{v.name}</option>)}

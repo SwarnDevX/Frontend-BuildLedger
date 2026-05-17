@@ -180,7 +180,7 @@ export default function VendorDashboard() {
       </div>
 
       {/* Stats */}
-      <div className="grid grid-cols-2 sm:grid-cols-4 gap-4">
+      <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
         {[
           { label: 'Active Contracts',   value: activeContracts.length,                                  icon: FileText,   color: '#2563EB', bg: 'rgba(37,99,235,0.08)'  },
           { label: 'Documents',          value: docs.length,                                              icon: Package,    color: '#14B8A6', bg: 'rgba(20,184,166,0.08)' },

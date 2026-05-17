@@ -162,7 +162,7 @@ export default function ProjectDetailModal({
               {!editing ? (
                 <>
                   {/* Info grid */}
-                  <div className="grid grid-cols-2 gap-4">
+                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
                     {[
                       ['Name',       project.name      || '—'],
                       ['Location',   project.location  || '—'],
@@ -240,11 +240,11 @@ export default function ProjectDetailModal({
               ) : (
                 /* ADMIN full edit form */
                 <div className="space-y-3">
-                  <div className="grid grid-cols-2 gap-3">
-                    <FormInput label="Project Name" required dense className="col-span-2"
+                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                    <FormInput label="Project Name" required dense className="col-span-2 sm:col-span-2"
                       value={editForm.name} onChange={setF('name')} placeholder="Project name"
                       error={editErrors.name} disabled={isTerminal} />
-                    <FormInput label="Location" required dense className="col-span-2"
+                    <FormInput label="Location" required dense className="col-span-1 sm:col-span-2"
                       value={editForm.location} onChange={setF('location')} placeholder="Project location"
                       error={editErrors.location} disabled={isTerminal} />
                     <FormInput label="Budget (₹)" required dense type="number"
@@ -264,7 +264,7 @@ export default function ProjectDetailModal({
                       value={editForm.endDate} onChange={setF('endDate')}
                       error={editErrors.endDate} disabled={isTerminal} />
                     {isTerminal && (
-                      <FormInput label="Actual End Date" dense type="date" className="col-span-2"
+                      <FormInput label="Actual End Date" dense type="date" className="col-span-1 sm:col-span-2"
                         value={editForm.actualEndDate} onChange={setF('actualEndDate')}
                         min={editForm.startDate || undefined}
                         hint="Set the actual date this project ended" />

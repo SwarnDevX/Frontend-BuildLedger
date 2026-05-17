@@ -196,11 +196,11 @@ export default function ProjectManagement() {
               New projects start in <strong className="text-amber-600">PLANNING</strong> status.
               Activate them from the detail view.
             </InfoBox>
-            <div className="grid grid-cols-2 gap-3">
-              <FormInput label="Project Name" required className="col-span-2"
+            <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+              <FormInput label="Project Name" required className="col-span-1 sm:col-span-2"
                 value={form.name} placeholder="e.g. City Bridge Renovation"
                 onChange={e => { set('name')(e); clearError('name'); }} error={formErrors.name} />
-              <FormInput label="Location" required className="col-span-2"
+              <FormInput label="Location" required className="col-span-1 sm:col-span-2"
                 value={form.location} placeholder="e.g. Chennai, Tamil Nadu"
                 onChange={e => { set('location')(e); clearError('location'); }} error={formErrors.location} />
               <FormInput label="Budget (₹)" required type="number" min="0.01" step="0.01"

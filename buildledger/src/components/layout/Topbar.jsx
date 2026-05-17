@@ -1,6 +1,6 @@
 import { useState, useRef, useEffect, useCallback } from 'react';
 import { useLocation, useNavigate } from 'react-router-dom';
-import { Bell, Search, ChevronDown, Moon, Sun, LogOut } from 'lucide-react';
+import { Bell, Search, ChevronDown, Moon, Sun, LogOut, Menu, X } from 'lucide-react';
 import { useAuth } from '../../context/AuthContext';
 import { useTheme } from '../../context/ThemeContext';
 import { getMyNotifications, getAdminUnreadCount } from '../../api/notifications';
@@ -19,7 +19,7 @@ const pageTitles = {
   '/vendor/contracts':   'My Contracts',
 };
 
-export default function Topbar({ sidebarWidth }) {
+export default function Topbar({ sidebarWidth, isMobile, mobileOpen, setMobileOpen }) {
   const location             = useLocation();
   const navigate             = useNavigate();
   const { user, logout }     = useAuth();
@@ -87,12 +87,23 @@ export default function Topbar({ sidebarWidth }) {
 
   return (
     <header
-      className="glass-topbar fixed top-0 right-0 z-20 flex items-center gap-4 px-6"
-      style={{ left: sidebarWidth, height: 64 }}
+      className="glass-topbar fixed top-0 right-0 z-20 flex items-center gap-3 px-3 sm:px-6"
+      style={{ left: isMobile ? 0 : sidebarWidth, height: 64 }}
     >
-      <div className="flex-1">
-        <h1 className="text-base font-semibold text-slate-700 dark:text-slate-100">{title}</h1>
-        <p className="text-xs text-slate-400 dark:text-slate-500">{today}</p>
+      {/* Hamburger — mobile only */}
+      {isMobile && (
+        <button
+          onClick={() => setMobileOpen(!mobileOpen)}
+          className={iconBtn}
+          aria-label="Toggle menu"
+        >
+          {mobileOpen ? <X size={18} /> : <Menu size={18} />}
+        </button>
+      )}
+
+      <div className="flex-1 min-w-0">
+        <h1 className="text-base font-semibold text-slate-700 dark:text-slate-100 truncate">{title}</h1>
+        <p className="text-xs text-slate-400 dark:text-slate-500 hidden sm:block">{today}</p>
       </div>
 
       {/* Search */}
@@ -129,7 +140,7 @@ export default function Topbar({ sidebarWidth }) {
       {/* User menu */}
       <div className="relative" ref={menuRef}>
         <button onClick={() => setShowMenu(!showMenu)} className="flex items-center gap-2 cursor-pointer group">
-          <div className="w-8 h-8 rounded-full bg-gradient-to-br from-blue-500 to-teal-400 flex items-center justify-center text-white text-xs font-bold shadow-md">
+          <div className="w-8 h-8 rounded-full bg-gradient-to-br from-blue-500 to-teal-400 flex items-center justify-center text-white text-xs font-bold shadow-md shrink-0">
             {initials}
           </div>
           <div className="hidden sm:block text-left">
@@ -140,7 +151,7 @@ export default function Topbar({ sidebarWidth }) {
               {user?.role?.replace('_', ' ')}
             </p>
           </div>
-          <ChevronDown size={13} className="text-slate-400 dark:text-slate-400" />
+          <ChevronDown size={13} className="text-slate-400 dark:text-slate-400 hidden sm:block" />
         </button>
 
         {showMenu && (

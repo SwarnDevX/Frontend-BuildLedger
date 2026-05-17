@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import { useState, useEffect } from 'react';
 import { Outlet } from 'react-router-dom';
 import Sidebar from './Sidebar';
 import Topbar from './Topbar';
@@ -6,8 +6,22 @@ import { useTheme } from '../../context/ThemeContext';
 
 export default function AppShell() {
   const [collapsed, setCollapsed] = useState(false);
+  const [mobileOpen, setMobileOpen] = useState(false);
+  const [isMobile, setIsMobile] = useState(() => window.innerWidth < 768);
   const { isDark } = useTheme();
+
+  useEffect(() => {
+    const handleResize = () => {
+      const mobile = window.innerWidth < 768;
+      setIsMobile(mobile);
+      if (!mobile) setMobileOpen(false);
+    };
+    window.addEventListener('resize', handleResize);
+    return () => window.removeEventListener('resize', handleResize);
+  }, []);
+
   const sidebarWidth = collapsed ? 72 : 240;
+  const marginLeft = isMobile ? 0 : sidebarWidth;
 
   return (
     <div
@@ -45,7 +59,6 @@ export default function AppShell() {
               : 'radial-gradient(circle, rgba(245,158,11,0.1) 0%, transparent 70%)',
           }}
         />
-        {/* Extra dark-mode-only accent blob */}
         {isDark && (
           <div
             className="absolute bottom-0 left-1/3 w-72 h-72 rounded-full"
@@ -54,14 +67,25 @@ export default function AppShell() {
         )}
       </div>
 
-      <Sidebar collapsed={collapsed} setCollapsed={setCollapsed} />
-      <Topbar sidebarWidth={sidebarWidth} />
+      <Sidebar
+        collapsed={collapsed}
+        setCollapsed={setCollapsed}
+        isMobile={isMobile}
+        mobileOpen={mobileOpen}
+        setMobileOpen={setMobileOpen}
+      />
+      <Topbar
+        sidebarWidth={sidebarWidth}
+        isMobile={isMobile}
+        mobileOpen={mobileOpen}
+        setMobileOpen={setMobileOpen}
+      />
 
       <main
         className="relative z-10 transition-all duration-300 pt-16 min-h-screen"
-        style={{ marginLeft: sidebarWidth }}
+        style={{ marginLeft }}
       >
-        <div className="p-6">
+        <div className="p-3 sm:p-4 md:p-6">
           <Outlet />
         </div>
       </main>

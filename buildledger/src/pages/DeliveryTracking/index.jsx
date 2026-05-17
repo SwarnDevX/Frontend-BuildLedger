@@ -407,7 +407,7 @@ export default function DeliveryTracking() {
       {/* ── DELIVERIES TAB ── */}
       {tab === 'deliveries' && (
         <>
-          <div className="grid grid-cols-2 sm:grid-cols-5 gap-3">
+          <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-5 gap-3">
             {Object.entries(DELIVERY_STATUS_MAP).map(([s, cfg]) => {
               const Icon = cfg.icon;
               const count = deliveries.filter(d => d.status === s).length;
@@ -496,7 +496,7 @@ export default function DeliveryTracking() {
       {/* ── SERVICES TAB ── */}
       {tab === 'services' && (
         <>
-          <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
+          <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
             {Object.entries(SERVICE_STATUS_MAP).map(([s, cfg]) => {
               const count = services.filter(x => x.status === s).length;
               return (
@@ -598,7 +598,7 @@ export default function DeliveryTracking() {
             onChange={e => { setD('item')(e); if (e.target.value.trim()) setDErrors(p => ({ ...p, item: '' })); }}
             placeholder="Item description (min 2 chars)" error={dErrors.item} />
 
-          <div className="grid grid-cols-2 gap-3">
+          <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
             <FormInput label="Quantity" required type="number" min="0.01" step="0.01"
               value={formD.quantity}
               onChange={e => { setD('quantity')(e); if (e.target.value) setDErrors(p => ({ ...p, quantity: '' })); }}
